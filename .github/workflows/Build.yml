@@ -1,0 +1,122 @@
+name: Build and release static export
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Stable version matching package.json (for example, v2.6.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$GITHUB_REF" == refs/heads/main ]] || { echo "Manual releases must run from main" >&2; exit 1; }
+            tag="$INPUT_VERSION"
+            [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo "Expected a stable version such as v2.6.0" >&2; exit 1; }
+            remote_tag="$(git ls-remote --tags origin "refs/tags/$tag")"
+            [[ -z "$remote_tag" ]] || { echo "Tag already exists; refusing to overwrite or resume" >&2; exit 1; }
+          else
+            [[ "$GITHUB_REF" == refs/tags/v* ]] || exit 1
+          fi
+          package_version="$(node -p "require('./package.json').version")"
+          [[ "$tag" == "v$package_version" ]] || { echo "Tag must match package.json version" >&2; exit 1; }
+          release_tags="$(gh api --paginate "repos/$GH_REPO/releases" --jq '.[].tag_name')"
+          if grep -Fxq -- "$tag" <<< "$release_tags"; then
+            echo "Release already exists (including drafts); refusing to overwrite or resume" >&2
+            exit 1
+          fi
+          draft=false
+          prerelease=false
+          [[ "$tag" != *-* ]] || prerelease=true
+          if [[ "$tag" == *-alpha* || "$tag" == *-beta* || "$tag" == *-rc* ]]; then
+            draft=true
+          fi
+          printf 'tag=%s\ndraft=%s\nprerelease=%s\n' "$tag" "$draft" "$prerelease" >> "$GITHUB_OUTPUT"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify static export
+        run: pnpm run verify
+
+      - name: Compress dist folder
+        run: zip -r dist.zip dist
+
+      - name: Create manual release tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          main_sha="$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$main_sha" == "$GITHUB_SHA" ]] || { echo "main changed; start a new run from the current main" >&2; exit 1; }
+          # Creating a ref fails if it already exists. Never update or force a tag.
+          # GITHUB_TOKEN does not trigger another tag-push workflow.
+          gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$RELEASE_TAG" -f sha="$GITHUB_SHA"
+          git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+
+      - name: Create draft and upload asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+        run: |
+          [[ "$(git rev-parse "$RELEASE_TAG^{commit}")" == "$GITHUB_SHA" ]] || { echo "Tag does not point to the verified commit" >&2; exit 1; }
+          gh release create "$RELEASE_TAG" dist.zip --verify-tag --draft --prerelease="$PRERELEASE" --title "$RELEASE_TAG" --notes ""
+
+      - name: Generate changelog without publishing
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: pnpm dlx changelogithub@15.0.5 --to "$RELEASE_TAG" --output "$RUNNER_TEMP/release-notes.md"
+
+      - name: Finalize release after checking uploaded asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          DRAFT: ${{ steps.release.outputs.draft }}
+        run: |
+          test -s "$RUNNER_TEMP/release-notes.md"
+          gh release view "$RELEASE_TAG" --json isDraft,tagName,assets |
+            jq -e --arg tag "$RELEASE_TAG" --argjson size "$(stat -c %s dist.zip)" \
+              '.isDraft and .tagName == $tag and ([.assets[] | select(.name == "dist.zip" and .state == "uploaded" and .size == $size)] | length == 1)'
+          # Alpha, beta and RC tags retain their draft status; stable releases publish last.
+          gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --draft="$DRAFT"
