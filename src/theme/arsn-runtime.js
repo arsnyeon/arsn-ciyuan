@@ -385,13 +385,14 @@
   }
 
   /* ===================== 季节 / 标题 / 气泡 ===================== */
-  var ARSN_MEME_DATA = [
+  var ARSN_MEME_DEFAULTS = [
     "/arsn-assets/meme-1.webp",
     "/arsn-assets/meme-2.webp",
     "/arsn-assets/meme-3.webp",
     "/arsn-assets/meme-4.webp",
     "/arsn-assets/meme-5.webp"
   ];
+  var ARSN_MEME_DATA = ARSN_MEME_DEFAULTS.slice();
 
   var BUBBLE_LINES = [
     "今天也要元气满满哦～",
@@ -3097,6 +3098,7 @@
       logoUrl: "ArsnLogoUrl",
       overviewIconUrl: "ArsnOverviewIconUrl",
       mascotUrl: "ArsnMascotUrl",
+      memeImages: "ArsnMemeImages",
       apiKey: "ArsnApiKey",
       weatherKey: "ArsnWeatherKey"
     };
@@ -3115,6 +3117,13 @@
     if (typeof values.logoUrl === "string" && values.logoUrl.trim()) LOGO_DATA = values.logoUrl.trim();
     if (typeof values.overviewIconUrl === "string" && values.overviewIconUrl.trim()) TITLE_ICON = values.overviewIconUrl.trim();
     if (typeof values.mascotUrl === "string" && values.mascotUrl.trim()) TAFFY_SRC = values.mascotUrl.trim();
+    if (Array.isArray(values.memeImages)) {
+      ARSN_MEME_DATA = values.memeImages.filter(function (image) {
+        return typeof image === "string" && image.trim().length > 0;
+      }).map(function (image) { return image.trim(); });
+    } else {
+      ARSN_MEME_DATA = ARSN_MEME_DEFAULTS.slice();
+    }
     var apiKey = typeof values.apiKey === "string" ? values.apiKey : values.weatherKey;
     XUN_API_KEY = typeof apiKey === "string" ? apiKey.trim() : "";
     window.CustomLogo = LOGO_DATA;

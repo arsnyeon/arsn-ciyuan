@@ -34,6 +34,23 @@ describe("runtime configuration boundary", () => {
 		readRuntimeConfig();
 	});
 
+	it("supports custom meme image URLs and an empty list to disable them", () => {
+		const previous = window.ArsnThemeConfig;
+		window.ArsnThemeConfig = {
+			memeImages: ["https://example.com/a.webp", " /custom/b.png "],
+		};
+		expect(readRuntimeConfig().arsnMemeImages).toEqual([
+			"https://example.com/a.webp",
+			"/custom/b.png",
+		]);
+
+		window.ArsnThemeConfig = { memeImages: [] };
+		expect(readRuntimeConfig().arsnMemeImages).toEqual([]);
+
+		window.ArsnThemeConfig = previous;
+		readRuntimeConfig();
+	});
+
 	it("validates legacy globals and keeps stable snapshots", () => {
 		window.ForceTheme = "unsupported";
 		window.ForceSortType = "invalid";

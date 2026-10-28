@@ -14,6 +14,7 @@ export interface RuntimeConfig {
 	arsnOverviewIconUrl: string;
 	arsnMascotUrl: string;
 	arsnApiKey: string;
+	arsnMemeImages: string[];
 	arsnFooterLinks: Array<{ name: string; link: string }>;
 	forceTheme?: "dark" | "light";
 	backgroundImage?: string;
@@ -44,6 +45,13 @@ const defaults: RuntimeConfig = {
 	arsnOverviewIconUrl: "/arsn-assets/title-icon.webp",
 	arsnMascotUrl: "/arsn-assets/taffy.webp",
 	arsnApiKey: "",
+	arsnMemeImages: [
+		"/arsn-assets/meme-1.webp",
+		"/arsn-assets/meme-2.webp",
+		"/arsn-assets/meme-3.webp",
+		"/arsn-assets/meme-4.webp",
+		"/arsn-assets/meme-5.webp",
+	],
 	arsnFooterLinks: [
 		{ name: "ApiNexus", link: "https://api.xunjinlu.fun/" },
 		{ name: "FlowLoss 网测", link: "https://net.arsn.cn/" },
@@ -73,12 +81,36 @@ let snapshot = defaults;
 export function readRuntimeConfig(): RuntimeConfig {
 	if (typeof window === "undefined") return defaults;
 	const arsn = window.ArsnThemeConfig ?? {};
-	const footerLinks = Array.isArray(arsn.footerLinks)
+	const configuredFooterLinks = Array.isArray(arsn.footerLinks)
 		? arsn.footerLinks.filter(
 				(link) =>
 					typeof link?.name === "string" && typeof link?.link === "string",
 			)
 		: defaults.arsnFooterLinks;
+	const footerLinks =
+		configuredFooterLinks.length === snapshot.arsnFooterLinks.length &&
+		configuredFooterLinks.every(
+			(link, index) =>
+				link.name === snapshot.arsnFooterLinks[index]?.name &&
+				link.link === snapshot.arsnFooterLinks[index]?.link,
+		)
+			? snapshot.arsnFooterLinks
+			: configuredFooterLinks;
+	const configuredMemeImages = Array.isArray(arsn.memeImages)
+		? arsn.memeImages
+				.filter(
+					(image): image is string =>
+						typeof image === "string" && image.trim().length > 0,
+				)
+				.map((image) => image.trim())
+		: defaults.arsnMemeImages;
+	const memeImages =
+		configuredMemeImages.length === snapshot.arsnMemeImages.length &&
+		configuredMemeImages.every(
+			(image, index) => image === snapshot.arsnMemeImages[index],
+		)
+			? snapshot.arsnMemeImages
+			: configuredMemeImages;
 	const next: RuntimeConfig = {
 		...defaults,
 		arsnMusicPlaylistId: text(arsn.playlistId) ?? defaults.arsnMusicPlaylistId,
@@ -91,6 +123,7 @@ export function readRuntimeConfig(): RuntimeConfig {
 			typeof arsn.apiKey === "string"
 				? arsn.apiKey
 				: (text(arsn.weatherKey) ?? ""),
+		arsnMemeImages: memeImages,
 		arsnFooterLinks: footerLinks,
 		forceTheme:
 			window.ForceTheme === "dark" || window.ForceTheme === "light"

@@ -11,6 +11,7 @@ interface Window {
 		mascotUrl?: string;
 		footerLinks?: Array<{ name: string; link: string }>;
 		apiKey?: string;
+		memeImages?: string[];
 		/** Legacy alias; apiKey is the shared key for XunJinLu APIs. */
 		weatherKey?: string;
 	};

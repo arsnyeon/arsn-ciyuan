@@ -36,6 +36,10 @@ window.ArsnThemeConfig = {
   "logoUrl": "/arsn-assets/logo.png",
   "overviewIconUrl": "/arsn-assets/title-icon.webp",
   "mascotUrl": "/arsn-assets/taffy.webp",
+  "memeImages": [
+    "/arsn-assets/meme-1.webp",
+    "https://example.com/custom-meme.webp"
+  ],
   "footerLinks": [
     { "name": "ApiNexus", "link": "https://api.xunjinlu.fun/" },
     { "name": "FlowLoss 网测", "link": "https://net.arsn.cn/" }
@@ -53,6 +57,7 @@ window.ArsnThemeConfig = {
 | `logoUrl` | 页眉 Logo 和站点图标 | `/arsn-assets/logo.png` |
 | `overviewIconUrl` | 概览标题旁的装饰图标 | `/arsn-assets/title-icon.webp` |
 | `mascotUrl` | 网络概览卡片上的看板娘图片 | `/arsn-assets/taffy.webp` |
+| `memeImages` | 表情气泡随机使用的图片 URL 数组；可填本地路径或完整网址，设为 `[]` 可关闭表情包 | 主题内置的 5 张表情包 |
 | `footerLinks` | 页脚友情链接数组；每项包含 `name` 和 `link`。设为 `[]` 可隐藏 | ApiNexus、FlowLoss 网测 |
 | `apiKey` | XunJinLu 全局 API Key，同时用于天气及红云音乐接口 | 空字符串 |
 
