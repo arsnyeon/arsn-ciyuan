@@ -1,0 +1,530 @@
+import { QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import ServerDetailChart from "@/components/ServerDetailChart";
+import { createServer, createSettingResponse } from "@/test/fixtures";
+import { createTestQueryClient } from "@/test/utils";
+import type { NezhaServer, NezhaWebsocketResponse } from "@/types/nezha-api";
+
+const detailChartMocks = vi.hoisted(() => ({
+	connected: true,
+	fetchLoginUser: vi.fn(),
+	fetchServerMetrics: vi.fn(),
+	fetchSetting: vi.fn(),
+	lastData: null as NezhaWebsocketResponse | null,
+	messageHistory: [] as NezhaWebsocketResponse[],
+}));
+
+vi.mock("recharts", () => {
+	const createElement =
+		(testId: string) =>
+		({
+			children,
+			data,
+			dataKey,
+			syncMethod,
+		}: {
+			children?: ReactNode;
+			data?: unknown[];
+			dataKey?: string;
+			syncMethod?: string;
+		}) => (
+			<div
+				data-sync-method={syncMethod}
+				data-key={dataKey}
+				data-points={data?.length}
+				data-series={data ? JSON.stringify(data) : undefined}
+				data-testid={testId}
+			>
+				{children}
+			</div>
+		);
+
+	const AreaChart = createElement("area-chart");
+	const LineChart = createElement("line-chart");
+	const genericChart = createElement("generic-chart");
+
+	return {
+		Area: createElement("area"),
+		AreaChart,
+		BarChart: genericChart,
+		CartesianGrid: createElement("grid"),
+		ComposedChart: genericChart,
+		FunnelChart: genericChart,
+		Legend: ({ content }: { content?: ReactNode }) => (
+			<div data-testid="chart-legend">{content}</div>
+		),
+		Line: createElement("line"),
+		LineChart,
+		PieChart: genericChart,
+		RadarChart: genericChart,
+		RadialBarChart: genericChart,
+		ResponsiveContainer: ({ children }: { children?: ReactNode }) => (
+			<div data-testid="responsive-chart">{children}</div>
+		),
+		Sankey: genericChart,
+		ScatterChart: genericChart,
+		Tooltip: ({ content }: { content?: ReactNode }) => (
+			<div data-testid="chart-tooltip">{content}</div>
+		),
+		Treemap: genericChart,
+		XAxis: createElement("x-axis"),
+		YAxis: createElement("y-axis"),
+	};
+});
+
+vi.mock("@/hooks/use-websocket-context", () => ({
+	useWebSocketContext: () => ({
+		connected: detailChartMocks.connected,
+		lastData: detailChartMocks.lastData,
+		messageHistory: detailChartMocks.messageHistory,
+	}),
+}));
+
+vi.mock("@/lib/nezha-api", () => ({
+	fetchLoginUser: detailChartMocks.fetchLoginUser,
+	fetchServerMetrics: detailChartMocks.fetchServerMetrics,
+	fetchSetting: detailChartMocks.fetchSetting,
+}));
+
+function settingResponse(tsdbEnabled = true) {
+	return {
+		...createSettingResponse(),
+		data: {
+			...createSettingResponse().data,
+			tsdb_enabled: tsdbEnabled,
+		},
+	};
+}
+
+function loginResponse() {
+	return {
+		success: true,
+		data: {
+			id: 1,
+			username: "admin",
+			password: "",
+			created_at: "2025-01-01T00:00:00.000Z",
+			updated_at: "2025-01-01T00:00:00.000Z",
+		},
+	};
+}
+
+function metricsResponse(metric: string) {
+	return {
+		success: true,
+		data: {
+			server_id: 7,
+			server_name: "edge-chart-detail",
+			metric,
+			data_points: [
+				{ ts: Date.parse("2025-01-01T00:00:00.000Z"), value: 10 },
+				{ ts: Date.parse("2025-01-01T01:00:00.000Z"), value: 20 },
+				{ ts: Date.parse("2025-01-01T02:00:00.000Z"), value: 30 },
+			],
+		},
+	};
+}
+
+function websocketPayload(server: NezhaServer, now: number) {
+	return {
+		now,
+		servers: [server],
+	};
+}
+
+function renderWithQuery(ui: React.ReactElement) {
+	return render(
+		<QueryClientProvider client={createTestQueryClient()}>
+			{ui}
+		</QueryClientProvider>,
+	);
+}
+
+function seedWebSocketData() {
+	const baseNow = Date.parse("2025-01-01T00:00:20.000Z");
+	const server = createServer({
+		id: 7,
+		name: "edge-chart-detail",
+		host: {
+			gpu: ["NVIDIA T4"],
+		},
+		state: {
+			cpu: 45,
+			disk_used: 180,
+			gpu: [33],
+			mem_used: 80,
+			net_in_speed: 4 * 1024 ** 2,
+			net_out_speed: 3 * 1024 ** 2,
+			process_count: 77,
+			swap_used: 25,
+			tcp_conn_count: 18,
+			udp_conn_count: 9,
+		},
+	});
+
+	detailChartMocks.connected = true;
+	detailChartMocks.lastData = websocketPayload(server, baseNow);
+	detailChartMocks.messageHistory = [0, 1, 2].map((index) =>
+		websocketPayload(
+			createServer({
+				id: 7,
+				host: {
+					gpu: ["NVIDIA T4"],
+				},
+				state: {
+					cpu: 30 + index,
+					disk_used: 100 + index * 10,
+					gpu: [20 + index],
+					mem_used: 50 + index * 5,
+					net_in_speed: (1 + index) * 1024 ** 2,
+					net_out_speed: (2 + index) * 1024 ** 2,
+					process_count: 60 + index,
+					swap_used: 10 + index,
+					tcp_conn_count: 10 + index,
+					udp_conn_count: 5 + index,
+				},
+			}),
+			baseNow - index * 1000,
+		),
+	);
+}
+
+function chartSeries(key: string): Record<string, number | string>[] {
+	const mark = document.querySelector(`[data-key="${key}"]`);
+	const chart = mark?.closest("[data-series]");
+	expect(chart, `chart for ${key}`).not.toBeNull();
+	return JSON.parse(chart?.getAttribute("data-series") ?? "[]");
+}
+
+describe("ServerDetailChart", () => {
+	beforeEach(() => {
+		detailChartMocks.connected = true;
+		detailChartMocks.fetchLoginUser.mockReset();
+		detailChartMocks.fetchServerMetrics.mockReset();
+		detailChartMocks.fetchSetting.mockReset();
+		detailChartMocks.lastData = null;
+		detailChartMocks.messageHistory = [];
+		detailChartMocks.fetchLoginUser.mockRejectedValue(new Error("anonymous"));
+		detailChartMocks.fetchSetting.mockResolvedValue(settingResponse());
+	});
+
+	it("renders the loading grid without websocket data", () => {
+		detailChartMocks.connected = false;
+
+		const { container } = renderWithQuery(<ServerDetailChart server_id="7" />);
+
+		expect(container.querySelectorAll(".detail-chart-card")).toHaveLength(6);
+	});
+
+	it("renders realtime resource, network, connection, and GPU charts", async () => {
+		const user = userEvent.setup();
+		seedWebSocketData();
+
+		renderWithQuery(<ServerDetailChart server_id="7" />);
+
+		expect(
+			await screen.findByText("serverDetailChart.realtime"),
+		).toBeInTheDocument();
+		expect(screen.getByText("serverDetailChart.period1d")).toBeInTheDocument();
+		expect(screen.getByText("serverDetailChart.period7d")).toBeInTheDocument();
+		expect(screen.getByText("CPU")).toBeInTheDocument();
+		expect(screen.getByText("GPU: NVIDIA T4")).toBeInTheDocument();
+		expect(screen.getByText("serverDetailChart.mem")).toBeInTheDocument();
+		expect(screen.getByText("serverDetailChart.swap")).toBeInTheDocument();
+		expect(screen.getByText("serverDetailChart.disk")).toBeInTheDocument();
+		expect(screen.getByText("serverDetailChart.process")).toBeInTheDocument();
+		expect(screen.getByText("serverDetailChart.upload")).toBeInTheDocument();
+		expect(screen.getByText("serverDetailChart.download")).toBeInTheDocument();
+		expect(screen.getByText("TCP")).toBeInTheDocument();
+		expect(screen.getByText("UDP")).toBeInTheDocument();
+		expect(screen.getAllByTestId("area-chart").length).toBeGreaterThan(0);
+		expect(screen.getAllByTestId("line-chart").length).toBeGreaterThan(0);
+
+		await user.click(screen.getByText("serverDetailChart.period7d"));
+
+		expect(detailChartMocks.fetchServerMetrics).not.toHaveBeenCalled();
+	});
+
+	it("prevents historical periods when TSDB is disabled", async () => {
+		const user = userEvent.setup();
+		seedWebSocketData();
+		detailChartMocks.fetchSetting.mockResolvedValue(settingResponse(false));
+
+		renderWithQuery(<ServerDetailChart server_id="7" />);
+
+		await screen.findByText("serverDetailChart.realtime");
+		await user.click(screen.getByText("serverDetailChart.period1d"));
+
+		expect(detailChartMocks.fetchServerMetrics).not.toHaveBeenCalled();
+	});
+
+	it("fetches every historical metric group for the selected period", async () => {
+		const user = userEvent.setup();
+		seedWebSocketData();
+		Object.defineProperty(document, "cookie", {
+			configurable: true,
+			value: "session=1",
+		});
+		detailChartMocks.fetchLoginUser.mockResolvedValue(loginResponse());
+		detailChartMocks.fetchServerMetrics.mockImplementation(
+			(_serverId: number, metric: string) =>
+				Promise.resolve(metricsResponse(metric)),
+		);
+
+		renderWithQuery(<ServerDetailChart server_id="7" />);
+
+		await screen.findByText("serverDetailChart.realtime");
+		await user.click(screen.getByText("serverDetailChart.period1d"));
+
+		for (const metric of [
+			"cpu",
+			"gpu",
+			"memory",
+			"swap",
+			"disk",
+			"process_count",
+			"net_out_speed",
+			"net_in_speed",
+			"tcp_conn",
+			"udp_conn",
+		]) {
+			await waitFor(() => {
+				expect(detailChartMocks.fetchServerMetrics).toHaveBeenCalledWith(
+					7,
+					metric,
+					"1d",
+					expect.objectContaining({ signal: expect.any(AbortSignal) }),
+				);
+			});
+		}
+	});
+	it("uses websocket timestamps for zero GPU and consecutive unchanged samples", async () => {
+		seedWebSocketData();
+		const payload = detailChartMocks.lastData;
+		if (!payload) throw new Error("Expected seeded websocket payload");
+		const server = payload.servers[0];
+		server.state.gpu = [0];
+		const client = createTestQueryClient();
+		const ui = () => (
+			<QueryClientProvider client={client}>
+				<ServerDetailChart server_id="7" />
+			</QueryClientProvider>
+		);
+		const { rerender } = render(ui());
+		const firstNow = payload.now;
+		const values = {
+			cpu: 45,
+			gpu: 0,
+			mem: 40,
+			swap: 25,
+			disk: 45,
+			process: 77,
+			upload: 3,
+			download: 4,
+			tcp: 18,
+			udp: 9,
+		};
+		for (const [key, value] of Object.entries(values)) {
+			expect(chartSeries(key).slice(-1)[0]).toMatchObject({
+				timeStamp: String(firstNow),
+				[key]: value,
+			});
+		}
+		const previous = Object.fromEntries(
+			["cpu", "gpu", "process", "mem", "disk", "upload", "tcp"].map((key) => [
+				key,
+				chartSeries(key),
+			]),
+		);
+		detailChartMocks.messageHistory = [
+			payload,
+			...detailChartMocks.messageHistory,
+		].slice(0, 30);
+		detailChartMocks.lastData = websocketPayload(server, firstNow + 1000);
+		detailChartMocks.messageHistory = [
+			detailChartMocks.lastData,
+			...detailChartMocks.messageHistory,
+		].slice(0, 30);
+		rerender(ui());
+		for (const [key, points] of Object.entries(previous)) {
+			expect(chartSeries(key)).toEqual([
+				...points,
+				{ ...points[points.length - 1], timeStamp: String(firstNow + 1000) },
+			]);
+		}
+	});
+
+	it("switches server IDs without remounting or mixing realtime series", () => {
+		seedWebSocketData();
+		const current = detailChartMocks.lastData;
+		if (!current) throw new Error("Expected payload");
+		const second = createServer({
+			id: 8,
+			state: { cpu: 88, gpu: [0, 75] },
+			host: { gpu: ["First GPU", "Second GPU"] },
+		});
+		detailChartMocks.lastData = {
+			...current,
+			servers: [...current.servers, second],
+		};
+		detailChartMocks.messageHistory = [
+			detailChartMocks.lastData,
+			...detailChartMocks.messageHistory,
+		];
+		const client = createTestQueryClient();
+		const ui = (id: string) => (
+			<QueryClientProvider client={client}>
+				<ServerDetailChart server_id={id} />
+			</QueryClientProvider>
+		);
+		const { rerender } = render(ui("7"));
+		expect(chartSeries("cpu").length).toBeGreaterThan(1);
+		rerender(ui("8"));
+		expect(chartSeries("cpu")).toEqual([
+			{ timeStamp: String(current.now), cpu: 88 },
+		]);
+		expect(chartSeries("gpu")).toEqual([
+			{ timeStamp: String(current.now), gpu: 0 },
+		]);
+		expect(screen.getByText("GPU: Second GPU")).toBeInTheDocument();
+		const gpuMarks = document.querySelectorAll('[data-key="gpu"]');
+		expect(
+			JSON.parse(
+				gpuMarks[1].closest("[data-series]")?.getAttribute("data-series") ??
+					"[]",
+			),
+		).toEqual([{ timeStamp: String(current.now), gpu: 75 }]);
+		rerender(ui("7"));
+		expect(chartSeries("cpu").slice(-1)[0].cpu).toBe(45);
+		expect(chartSeries("cpu").some((point) => point.cpu === 88)).toBe(false);
+	});
+
+	it("synchronizes by timestamp when a GPU has a shorter history", () => {
+		seedWebSocketData();
+		const payload = detailChartMocks.lastData;
+		if (!payload) throw new Error("Expected seeded websocket payload");
+		payload.servers[0].state.gpu = [0, 42];
+		payload.servers[0].host.gpu = ["First", "New GPU"];
+		renderWithQuery(<ServerDetailChart server_id="7" />);
+		const charts = [
+			...screen.getAllByTestId("area-chart"),
+			...screen.getAllByTestId("line-chart"),
+		];
+		for (const chart of charts)
+			expect(chart).toHaveAttribute("data-sync-method", "value");
+		const gpuCharts = screen
+			.getAllByTestId("area")
+			.filter((node) => node.getAttribute("data-key") === "gpu")
+			.map((node) => node.closest('[data-testid="area-chart"]'));
+		const newest = JSON.parse(
+			gpuCharts[1]?.getAttribute("data-series") ?? "[]",
+		);
+		expect(newest).toEqual([{ timeStamp: String(payload.now), gpu: 42 }]);
+	});
+	it("renders current samples even when websocket history is empty", () => {
+		seedWebSocketData();
+		detailChartMocks.messageHistory = [];
+		renderWithQuery(<ServerDetailChart server_id="7" />);
+		for (const key of [
+			"cpu",
+			"gpu",
+			"mem",
+			"disk",
+			"process",
+			"upload",
+			"tcp",
+		]) {
+			expect(chartSeries(key).length).toBeGreaterThan(0);
+			expect(chartSeries(key).slice(-1)[0]?.timeStamp).toBe(
+				String(detailChartMocks.lastData?.now),
+			);
+		}
+	});
+
+	it.each([
+		"rejected",
+		"business",
+		"secondary",
+	])("clears stale historical series after a %s period failure and can recover", async (failure) => {
+		const user = userEvent.setup();
+		seedWebSocketData();
+		Object.defineProperty(document, "cookie", {
+			configurable: true,
+			value: "session=1",
+		});
+		detailChartMocks.fetchLoginUser.mockResolvedValue(loginResponse());
+		detailChartMocks.fetchServerMetrics.mockImplementation(
+			(_id: number, metric: string, period: string) => {
+				if (
+					period === "7d" &&
+					(failure !== "secondary" ||
+						["swap", "net_in_speed", "udp_conn"].includes(metric))
+				) {
+					return failure === "rejected"
+						? Promise.reject(new Error("offline"))
+						: Promise.resolve({ success: false, data: null });
+				}
+				return Promise.resolve(metricsResponse(metric));
+			},
+		);
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			renderWithQuery(<ServerDetailChart server_id="7" />);
+			await user.click(await screen.findByText("serverDetailChart.period1d"));
+			await waitFor(() =>
+				expect(screen.getAllByTestId("area-chart")).toHaveLength(5),
+			);
+			for (const key of [
+				"cpu",
+				"gpu",
+				"mem",
+				"disk",
+				"process",
+				"upload",
+				"tcp",
+			]) {
+				expect(chartSeries(key)).toHaveLength(3);
+				expect(chartSeries(key)[0].timeStamp).toBe(
+					String(Date.parse("2025-01-01T00:00:00.000Z")),
+				);
+			}
+			await user.click(screen.getByText("serverDetailChart.period7d"));
+			await waitFor(() =>
+				expect(screen.getAllByTestId("area-chart")).toHaveLength(5),
+			);
+			const failedKeys =
+				failure === "secondary"
+					? ["mem", "upload", "tcp"]
+					: ["cpu", "gpu", "mem", "disk", "process", "upload", "tcp"];
+			for (const key of failedKeys) expect(chartSeries(key)).toEqual([]);
+			expect(screen.getAllByRole("status")).toHaveLength(failedKeys.length);
+			await user.click(screen.getByText("serverDetailChart.period1d"));
+			await waitFor(() =>
+				expect(screen.getAllByTestId("area-chart")).toHaveLength(5),
+			);
+			for (const key of failedKeys) expect(chartSeries(key)).toHaveLength(3);
+		} finally {
+			error.mockRestore();
+		}
+	});
+
+	it("accepts successful empty historical series", async () => {
+		seedWebSocketData();
+		detailChartMocks.fetchServerMetrics.mockResolvedValue({
+			success: true,
+			data: { data_points: [] },
+		});
+		renderWithQuery(<ServerDetailChart server_id="7" />);
+		await userEvent
+			.setup()
+			.click(await screen.findByText("serverDetailChart.period1d"));
+		await waitFor(() =>
+			expect(screen.getAllByTestId("area-chart")).toHaveLength(5),
+		);
+		for (const key of ["cpu", "gpu", "mem", "disk", "process", "upload", "tcp"])
+			expect(chartSeries(key)).toEqual([]);
+	});
+});
