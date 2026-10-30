@@ -27,7 +27,7 @@ export function ServerControls({
 	customBackgroundImage,
 	showMap,
 	showServices,
-	inline,
+	viewMode,
 	currentGroup,
 	handleTagChange,
 	toggleMap,
@@ -78,19 +78,19 @@ export function ServerControls({
 					</button>
 				)}
 				<button
+					type="button"
 					onClick={toggleInline}
+					data-arsn-view-cycle
+					aria-label="切换服务器视图"
+					title="切换视图"
 					className={cn(
 						"inset-shadow-2xs inset-shadow-white/20 flex cursor-pointer flex-col items-center gap-0 rounded-[50px] bg-blue-100 p-2.5 text-blue-600 transition-all dark:bg-blue-900 dark:text-blue-100",
-						{
-							"inset-shadow-black/20 bg-blue-600 text-white dark:bg-blue-100 dark:text-blue-600":
-								inline === "1",
-						},
 						{
 							"bg-opacity-70 dark:bg-opacity-70": customBackgroundImage,
 						},
 					)}
 				>
-					<ViewColumnsIcon className="size-[13px]" />
+					<ViewColumnsIcon className="size-[13px]" data-view-mode={viewMode} />
 				</button>
 				<GroupSwitch
 					tabs={groupTabs}

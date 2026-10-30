@@ -64,8 +64,39 @@ vi.mock("@/components/ServerOverview", () => ({
 		offline: number;
 		online: number;
 		total: number;
+	}) => {
+		const { setStatus } = useStatus();
+		return (
+			<div data-testid="server-overview">
+				<span>{`${total}:${online}:${offline}`}</span>
+				<button type="button" onClick={() => setStatus("all")}>
+					total {total}
+				</button>
+				<button type="button" onClick={() => setStatus("online")}>
+					online {online}
+				</button>
+				<button type="button" onClick={() => setStatus("offline")}>
+					offline {offline}
+				</button>
+			</div>
+		);
+	},
+}));
+
+vi.mock("@/components/ArsnDetailedServerCard", () => ({
+	default: ({
+		serverInfo,
+		isVisible,
+	}: {
+		serverInfo: NezhaServer;
+		isVisible: boolean;
 	}) => (
-		<div data-testid="server-overview">{`${total}:${online}:${offline}`}</div>
+		<article
+			data-testid="detailed-server-card"
+			data-visible={String(isVisible)}
+			data-server-name={serverInfo.name}
+			hidden={!isVisible}
+		/>
 	),
 }));
 
@@ -176,6 +207,77 @@ describe("Servers page", () => {
 		});
 		expect(screen.getByText("cached-server")).toBeInTheDocument();
 		expect(screen.queryByRole("status")).not.toBeInTheDocument();
+	});
+
+	it("keeps detail cards mounted and applies the overview status filter", async () => {
+		const user = userEvent.setup();
+		renderServerPage({
+			connected: true,
+			lastData: websocketPayload([
+				createServer({ id: 1, name: "online-one" }),
+				createServer({
+					id: 2,
+					name: "offline-one",
+					last_active: "2024-12-31T23:00:00.000Z",
+				}),
+				createServer({ id: 3, name: "online-two" }),
+			]),
+		});
+
+		await user.click(screen.getByRole("button", { name: "切换服务器视图" }));
+		await user.click(screen.getByRole("button", { name: "切换服务器视图" }));
+		const details = screen.getAllByTestId("detailed-server-card");
+		expect(details).toHaveLength(3);
+		expect(details.map((card) => card.getAttribute("data-visible"))).toEqual([
+			"true",
+			"true",
+			"true",
+		]);
+
+		const persistentCard = screen.getAllByTestId("detailed-server-card")[0];
+		await user.click(screen.getByRole("button", { name: "online 2" }));
+		expect(screen.getAllByTestId("detailed-server-card")).toHaveLength(3);
+		expect(
+			screen
+				.getAllByTestId("detailed-server-card")[0]
+				.parentElement?.querySelector('[data-server-name="offline-one"]'),
+		).toHaveAttribute("data-visible", "false");
+
+		await user.click(screen.getByRole("button", { name: "offline 1" }));
+		const offlineCard = document.querySelector(
+			'[data-server-name="offline-one"]',
+		);
+		expect(offlineCard).toHaveAttribute("data-visible", "true");
+		expect(
+			document.querySelector('[data-server-name="online-one"]'),
+		).toHaveAttribute("data-visible", "false");
+
+		await user.click(screen.getByRole("button", { name: "total 3" }));
+		expect(screen.getAllByTestId("detailed-server-card")).toHaveLength(3);
+		expect(
+			document.querySelector('[data-server-name="online-one"]'),
+		).toHaveAttribute("data-visible", "true");
+		expect(document.querySelector('[data-server-name="online-one"]')).toBe(
+			persistentCard,
+		);
+	});
+
+	it("shows an empty state when a detailed status filter has no matches", async () => {
+		const user = userEvent.setup();
+		renderServerPage({
+			connected: true,
+			lastData: websocketPayload([
+				createServer({ id: 1, name: "online-only" }),
+			]),
+		});
+		await user.click(screen.getByRole("button", { name: "切换服务器视图" }));
+		await user.click(screen.getByRole("button", { name: "切换服务器视图" }));
+		await user.click(screen.getByRole("button", { name: "offline 0" }));
+
+		expect(screen.getByText("info.noMatchingServers")).toBeInTheDocument();
+		expect(
+			document.querySelector('[data-server-name="online-only"]'),
+		).toHaveAttribute("data-visible", "false");
 	});
 
 	it("shows the home skeleton until configuration is initialized even if server data arrived", () => {
@@ -627,7 +729,7 @@ describe("Servers page", () => {
 			lastData: websocketPayload([online]),
 		});
 
-		expect(screen.getByTestId("server-card")).toHaveTextContent("alpha");
+		expect(screen.getAllByTestId("server-card")[0]).toHaveTextContent("alpha");
 		expect(screen.queryByTestId("server-card-inline")).not.toBeInTheDocument();
 	});
 

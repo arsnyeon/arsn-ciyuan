@@ -3,6 +3,9 @@ import { useRuntimeConfig } from "@/lib/runtime-config";
 import { safeLocalStorage, safeSessionStorage } from "@/lib/storage";
 import type { NezhaWebsocketResponse } from "@/types/nezha-api";
 
+const isViewMode = (value: string | null): value is "0" | "1" | "2" =>
+	value === "0" || value === "1" || value === "2";
+
 export function useServerPreferences(
 	hasServices: boolean,
 	data: NezhaWebsocketResponse | null | undefined,
@@ -12,8 +15,13 @@ export function useServerPreferences(
 		useRuntimeConfig();
 	const [desiredShowServices, setShowServices] = useState<string>("0");
 	const [showMap, setShowMap] = useState<string>("0");
-	const [inline, setInline] = useState<string>("0");
-	const unsavedInline = useRef<string | null>(null);
+	const [viewMode, setViewMode] = useState<"0" | "1" | "2">(() => {
+		const savedViewMode = safeLocalStorage.getItem("arsn-view-mode");
+		if (isViewMode(savedViewMode)) return savedViewMode;
+		if (typeof window !== "undefined" && window.innerWidth < 768) return "0";
+		return safeLocalStorage.getItem("inline") === "1" ? "1" : "0";
+	});
+	const unsavedViewMode = useRef<"0" | "1" | "2" | null>(null);
 	const hasRestoredScroll = useRef(false);
 	const [currentGroup, setCurrentGroup] = useState<string>("All");
 	const restoreScrollPosition = useCallback(() => {
@@ -54,32 +62,27 @@ export function useServerPreferences(
 	}, [forceShowServices]);
 
 	const showServices = hasServices ? desiredShowServices : "0";
+	const inline = viewMode === "1" ? "1" : "0";
 
 	useEffect(() => {
-		const checkInlineSettings = () => {
-			const isMobile = window.innerWidth < 768;
-
-			// Mobile skips desktop defaults; shrinking does not reset an explicit choice.
-			if (!isMobile) {
-				const inlineState = safeLocalStorage.getItem("inline");
-				if (forceCardInline) {
-					setInline("1");
-				} else if (unsavedInline.current !== null) {
-					// A failed write must not let an older stored value undo this session.
-					setInline(unsavedInline.current);
-				} else if (inlineState !== null) {
-					setInline(inlineState);
-				}
+		const checkViewSettings = () => {
+			if (window.innerWidth < 768) return;
+			const savedViewMode = safeLocalStorage.getItem("arsn-view-mode");
+			const inlineState = safeLocalStorage.getItem("inline");
+			if (forceCardInline) {
+				setViewMode("1");
+			} else if (unsavedViewMode.current !== null) {
+				setViewMode(unsavedViewMode.current);
+			} else if (isViewMode(savedViewMode)) {
+				setViewMode(savedViewMode);
+			} else if (inlineState !== null) {
+				setViewMode(inlineState === "1" ? "1" : "0");
 			}
 		};
 
-		checkInlineSettings();
-
-		window.addEventListener("resize", checkInlineSettings);
-
-		return () => {
-			window.removeEventListener("resize", checkInlineSettings);
-		};
+		checkViewSettings();
+		window.addEventListener("resize", checkViewSettings);
+		return () => window.removeEventListener("resize", checkViewSettings);
 	}, [forceCardInline]);
 
 	useEffect(() => {
@@ -97,9 +100,7 @@ export function useServerPreferences(
 	}, []);
 
 	useEffect(() => {
-		if (data && canRestoreScroll) {
-			restoreScrollPosition();
-		}
+		if (data && canRestoreScroll) restoreScrollPosition();
 	}, [data, canRestoreScroll, restoreScrollPosition]);
 
 	const toggleMap = () => {
@@ -113,16 +114,19 @@ export function useServerPreferences(
 		safeLocalStorage.setItem("showServices", value);
 	};
 	const toggleInline = () => {
-		const value = inline === "0" ? "1" : "0";
-		setInline(value);
-		unsavedInline.current = safeLocalStorage.setItem("inline", value)
-			? null
-			: value;
+		const value = String((Number(viewMode) + 1) % 3) as "0" | "1" | "2";
+		setViewMode(value);
+		const inlineValue = value === "1" ? "1" : "0";
+		const savedMode = safeLocalStorage.setItem("arsn-view-mode", value);
+		const savedInline = safeLocalStorage.setItem("inline", inlineValue);
+		unsavedViewMode.current = savedMode && savedInline ? null : value;
 	};
+
 	return {
 		showServices,
 		showMap,
 		inline,
+		viewMode,
 		currentGroup,
 		handleTagChange,
 		toggleMap,

@@ -68,6 +68,7 @@ export default function Servers({
 		down,
 		downSpeed,
 		filteredServers,
+		allServers,
 		offlineServers,
 		onlineServers,
 		totalServers,
@@ -99,7 +100,10 @@ export default function Servers({
 	const hasServers = nezhaWsData.servers.length > 0;
 
 	return (
-		<div className="mx-auto w-full max-w-5xl px-0">
+		<div
+			className="mx-auto w-full max-w-5xl px-0"
+			data-arsn-view-mode={preferences.viewMode}
+		>
 			<ServerOverview
 				total={totalServers}
 				online={onlineServers}
@@ -126,7 +130,9 @@ export default function Servers({
 			<ServerList
 				hasServers={hasServers}
 				filteredServers={filteredServers}
+				allServers={allServers}
 				inline={inline}
+				viewMode={preferences.viewMode}
 				now={nezhaWsData.now}
 			/>
 		</div>

@@ -16,6 +16,7 @@ import Header, { RefreshToast } from "./components/Header";
 import LocalErrorBoundary from "./components/LocalErrorBoundary";
 import { ServerDetailPageLoading } from "./components/loading/ServerDetailLoading";
 import RetryableLazy from "./components/RetryableLazy";
+import { parseThemeConfig } from "./features/runtime-config/parse-theme-config";
 import { useBackground } from "./hooks/use-background";
 import { useTheme } from "./hooks/use-theme";
 import { InjectContext } from "./lib/inject";
@@ -135,11 +136,22 @@ const MainApp: React.FC = () => {
 
 	const language = settingData?.data?.config?.language;
 	useEffect(() => {
-		if (!window.__ARSN_THEME__) return;
+		if (!window.__ARSN_THEME__ || settingsPending) return;
 		const code = settingData?.data?.config?.custom_code ?? "";
-		window.__arsnApplyCustomCode?.(code);
+		try {
+			parseThemeConfig(code);
+			window.__arsnApplyCustomCode?.(code);
+			setInitialization({ code: "", status: "ready" });
+		} catch (error) {
+			window.__arsnApplyCustomCode?.("");
+			setInitialization({
+				code: "",
+				status: "error",
+				error: toError(error) ?? new Error("Theme configuration is invalid"),
+			});
+		}
 		refreshRuntimeConfig();
-	}, [settingData?.data?.config?.custom_code]);
+	}, [settingData?.data?.config?.custom_code, settingsPending]);
 	useEffect(() => {
 		const savedLanguage = safeLocalStorage.getItem("language");
 		if (language && !savedLanguage)

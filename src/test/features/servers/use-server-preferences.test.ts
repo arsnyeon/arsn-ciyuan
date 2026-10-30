@@ -76,6 +76,23 @@ describe("server preferences", () => {
 			expect(localStorage.getItem(key)).toBe("0");
 		}
 	});
+	it("cycles grid, list, and detailed views without reloading and persists the selected view", () => {
+		const { result } = renderHook(() => useServerPreferences(true, null));
+		expect(result.current.viewMode).toBe("0");
+		act(() => result.current.toggleInline());
+		expect(result.current).toMatchObject({ viewMode: "1", inline: "1" });
+		act(() => result.current.toggleInline());
+		expect(result.current).toMatchObject({ viewMode: "2", inline: "0" });
+		expect(localStorage.getItem("arsn-view-mode")).toBe("2");
+		expect(localStorage.getItem("inline")).toBe("0");
+		act(() => result.current.toggleInline());
+		expect(result.current.viewMode).toBe("0");
+	});
+	it("migrates the previous inline preference to the list view", () => {
+		localStorage.setItem("inline", "1");
+		const { result } = renderHook(() => useServerPreferences(true, null));
+		expect(result.current).toMatchObject({ viewMode: "1", inline: "1" });
+	});
 	it("restores stored preferences and group selection", () => {
 		for (const key of ["showMap", "showServices", "inline"])
 			localStorage.setItem(key, "1");

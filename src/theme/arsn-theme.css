@@ -1368,49 +1368,12 @@ html.dark .server-footer .arsn-links a:hover { color: #93c5fd !important; }
 }
 
 /* ===================== 详情卡片视图 ===================== */
-.arsn-richbtn {
-  height: 30px;
-  flex: 0 0 auto;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(120, 120, 128, .2);
-  background: rgba(255, 255, 255, .55);
-  color: rgba(60, 60, 67, .75);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background .2s ease, color .2s ease, border-color .2s ease;
-}
-.arsn-richbtn:hover { background: rgba(255, 255, 255, .85); }
-.arsn-richbtn.is-on { background: #2563eb; border-color: transparent; color: #fff; }
-html.dark .arsn-richbtn { background: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .14); color: rgba(235, 235, 245, .75); }
-html.dark .arsn-richbtn.is-on { background: #2563eb; color: #fff; }
-
 .arsn-richview { display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
-html.arsn-rich-on .arsn-richview { display: grid; }
-html.arsn-rich-on .server-card-list,
-html.arsn-rich-on .server-inline-list { display: none !important; }
-
-.arsn-richsvc { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.arsn-richsvcitem {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 12px;
-  border-radius: 12px;
-  background: var(--arsn-glass-surface);
-  border: 1px solid var(--arsn-glass-border);
-  font-size: 11.5px;
-  color: rgba(60, 60, 67, .7);
-  backdrop-filter: blur(var(--arsn-glass-card-blur)) saturate(155%);
-  -webkit-backdrop-filter: blur(var(--arsn-glass-card-blur)) saturate(155%);
-}
-html.dark .arsn-richsvcitem { background: rgba(28, 28, 30, .7); border-color: rgba(255, 255, 255, .1); color: rgba(235, 235, 245, .7); }
-.arsn-richsvcitem b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.arsn-richsvcms { margin-left: auto; color: #10b981; font-weight: 600; }
-.arsn-richsvcrate { color: rgba(60, 60, 67, .55); }
-html.dark .arsn-richsvcrate { color: rgba(235, 235, 245, .55); }
+.arsn-react-richview[hidden],
+.arsn-node-card[hidden],
+.server-card-list[hidden],
+.server-inline-list[hidden] { display: none !important; }
+[data-arsn-view-mode="2"] .arsn-react-richview:not([hidden]) { display: grid; }
 
 .arsn-node-card {
   cursor: pointer;
@@ -1602,12 +1565,10 @@ html.dark .arsn-node-netstat { background: rgba(255,255,255,.045); border-color:
 }
 .arsn-node-traffic-value { grid-area: 2 / 2; align-self: center; font-size: 11px; font-weight: 700; color: var(--an-secondary); white-space: nowrap; }
 
-.arsn-richempty { grid-column: 1 / -1; text-align: center; padding: 30px 0; font-size: 12px; opacity: .5; }
+.arsn-react-richview > .server-empty-state { grid-column: 1 / -1; margin-top: 0; }
 
 @media (max-width: 720px) {
   .arsn-richview { grid-template-columns: 1fr; }
-  .arsn-richsvc { grid-template-columns: 1fr; }
-  .arsn-richrow { grid-template-columns: repeat(2, 1fr); }
 }
 .arsn-node-foottags { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; }
 .arsn-node-foottag {
@@ -1686,27 +1647,18 @@ html.dark section[class*="md:grid-cols-2"][class*="mt-4"]:not(.server-card-list)
 .server-overview-controls > section > button[data-arsn-view-cycle] {
   border-color: var(--arsn-glass-border) !important;
 }
-html:not(.dark) .server-overview-controls button[data-arsn-view-cycle] {
+html:not(.dark) .server-overview-controls button[data-arsn-view-cycle],
+html.dark .server-overview-controls button[data-arsn-view-cycle] {
   background: rgba(255, 255, 255, .45) !important;
   background-image: none !important;
   color: #2563eb !important;
   box-shadow: 0 8px 20px -10px rgba(40, 62, 120, .35), inset 0 1px 0 rgba(255, 255, 255, .9) !important;
 }
-html:not(.dark) .server-overview-controls button[data-arsn-view-cycle]:hover {
-  background: rgba(255, 255, 255, .68) !important;
-  background-image: none !important;
-}
 html.dark .server-overview-controls button[data-arsn-view-cycle] {
   background: rgba(255, 255, 255, .08) !important;
-  background-image: none !important;
   color: #93c5fd !important;
   box-shadow: 0 8px 20px -10px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .12) !important;
 }
-html.arsn-rich-on .server-overview-controls ~ *:has(.server-card-list),
-html.arsn-rich-on .server-overview-controls ~ *:has(.server-inline-list) {
-  display: none !important;
-}
-
 /* 统一自定义弹层、播放器和详情视图的玻璃层级 */
 .arsn-sort-menu,
 .arsn-lyricbar,
@@ -1742,13 +1694,6 @@ html.arsn-rich-on .server-overview-controls ~ *:has(.server-inline-list) {
   transform: translateY(-3px);
   box-shadow: var(--arsn-glass-shadow-hover), inset 0 1px 0 var(--arsn-glass-highlight);
 }
-.arsn-richsvcitem {
-  background: var(--arsn-glass-surface) !important;
-  border-color: var(--arsn-glass-border) !important;
-  box-shadow: inset 0 1px 0 var(--arsn-glass-highlight);
-  backdrop-filter: blur(14px) saturate(155%);
-  -webkit-backdrop-filter: blur(14px) saturate(155%);
-}
 section[class*="md:grid-cols-2"][class*="mt-4"]:not(.server-card-list) > div:not(.arsn-svc-dots) {
   border: 1px solid var(--arsn-glass-border) !important;
   background: linear-gradient(150deg, var(--arsn-glass-surface-raised), var(--arsn-glass-surface)) !important;
@@ -1766,11 +1711,6 @@ html.dark .arsn-node-card {
 html.dark .arsn-node-card:hover {
   transform: translateY(-3px);
   box-shadow: var(--arsn-glass-shadow-hover), inset 0 1px 0 var(--arsn-glass-highlight);
-}
-html.dark .arsn-richsvcitem {
-  background: var(--arsn-glass-surface) !important;
-  border-color: var(--arsn-glass-border) !important;
-  box-shadow: inset 0 1px 0 var(--arsn-glass-highlight);
 }
 html.dark .arsn-bubble { color: #f2f2f7; }
 html.dark .arsn-sort-menu,

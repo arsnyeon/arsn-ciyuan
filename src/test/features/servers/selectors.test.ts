@@ -155,6 +155,7 @@ describe("server selectors", () => {
 				upSpeed: 0,
 				downSpeed: 0,
 				filteredServers: [],
+				allServers: [],
 			});
 		}
 	});

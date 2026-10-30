@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { parseThemeConfig, parseThemeConfigValue } from "../features/runtime-config/parse-theme-config";
 (function () {
   "use strict";
   /* Theme by arsn-ciyuan | https://github.com/arsnyeon/arsn-ciyuan | 转载请注明出处 */
@@ -23,6 +24,8 @@
   /* 右上角看板娘：永雏塔菲透明抠图（WebP / data URI，无需外链） */
   var TAFFY_SRC = "/arsn-assets/taffy.webp";
   var LOGO_DATA = "/arsn-assets/logo.png";
+  var DEFAULT_BACKGROUND_API = "https://acg.yaohud.cn/dm/adaptive.php";
+  var DEFAULT_MUSIC_PLAYLIST_ID = "443797814";
   var FAVICON_32 = "/arsn-assets/favicon-32.png";
   var FAVICON_16 = "/arsn-assets/favicon-16.png";
   var TITLE_ICON = "/arsn-assets/title-icon.webp";
@@ -33,9 +36,6 @@
   var cells = [];                    // 已接管的单元格
   var mode = "transfer";             // transfer | stats
   var lastDataAt = 0;
-  var dataRevision = 0;
-  var richInitialized = false;
-  var richDirty = true;
   var disposed = false;
 
   var tapSock = null;                // 复用的「面板自己的」连接
@@ -70,7 +70,6 @@
   var svcAnimTimer = 0;
   var broadcastTimer = 0;
   var broadcastStartTimer = 0;
-  var viewIconTimers = [];
 
   /* 重复注入时先销毁旧实例 */
   var prev = window.__arsnStatCycle;
@@ -97,8 +96,6 @@
   /* ===================== 实时数据 ===================== */
   function ingest(payload) {
     if (disposed || !payload) return;
-    dataRevision++;
-    richDirty = true;
 
     /* 游客看不到服务器时，payload 里没有 servers（或为空）：清空旧数据并停止服务器播报 */
     if (!Array.isArray(payload.servers) || !payload.servers.length) {
@@ -107,7 +104,6 @@
         if (Object.prototype.hasOwnProperty.call(servers, key)) delete servers[key];
       }
       refresh();
-      if (richMode || !richInitialized) renderRich();
       return;
     }
 
@@ -147,7 +143,6 @@
     }
     refresh();
     /* Keep the detail cards keyed by server name and update their fields in place. */
-    if (richMode || !richInitialized) renderRich();
   }
 
   function onMessage(ev) {
@@ -1109,555 +1104,6 @@
   }
 
 
-  /* ===================== 详情卡片视图 ===================== */
-  var richMode = false;
-  var viewMode = 0;
-  var pendingViewMode = -1;
-  var suppressCycle = false;
-  var richTimer = null;
-  var richExtras = {};
-  var richHiddenEl = null;
-
-  function richEsc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
-    });
-  }
-
-  function richBytes(n) {
-    n = Number(n) || 0;
-    if (n < 1024) return Math.round(n) + " B";
-    var u = ["KB", "MB", "GB", "TB", "PB"], i = -1;
-    do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
-    return (n < 10 ? n.toFixed(1) : Math.round(n)) + " " + u[i];
-  }
-
-  function richUptime(s) {
-    s = Number(s) || 0;
-    var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
-    if (d) return d + " 天";
-    if (h) return h + " 小时";
-    return m + " 分钟";
-  }
-
-  function richSeg(pct) {
-    var segs = 18;
-    pct = Math.max(0, Math.min(100, Number(pct) || 0));
-    var on = Math.round(pct / 100 * segs);
-    var cls = pct >= 85 ? "bad" : pct >= 60 ? "warn" : "";
-    var out = '<span class="arsn-segbar">';
-    for (var i = 0; i < segs; i++) out += '<i class="' + (i < on ? "on " + cls : "") + '"></i>';
-    return out + "</span>";
-  }
-
-  function richMetric(label, value, pct) {
-    return '<div class="arsn-rm"><div class="arsn-rm-label">' + label +
-      '</div><div class="arsn-rm-top"><b>' + value + "</b></div>" + richSeg(pct) + "</div>";
-  }
-
-  function findRichServer(el) {
-    try {
-      var key = Object.keys(el).filter(function (k) { return k.indexOf("__reactFiber$") === 0; })[0];
-      if (!key) return null;
-      var fiber = el[key];
-      for (var i = 0; i < 14 && fiber; i++) {
-        var p = fiber.memoizedProps;
-        if (p && p.serverInfo && p.serverInfo.state) return p.serverInfo;
-        fiber = fiber.return;
-      }
-    } catch (e) {}
-    return null;
-  }
-
-  function cardName(card) {
-    var p = card.querySelector('p[class*="break-normal"]');
-    if (p && p.textContent.trim()) return p.textContent.trim();
-    var b = card.querySelector("b");
-    return b ? b.textContent.trim() : "";
-  }
-
-  function collectRichExtras() {
-    var lists = document.querySelectorAll(".server-card-list, .server-inline-list");
-    for (var li = 0; li < lists.length; li++) {
-      var cards = lists[li].querySelectorAll("div[class*='rounded-lg'][class*='cursor-pointer']");
-      for (var i = 0; i < cards.length; i++) {
-        var name = cardName(cards[i]);
-        if (!name) continue;
-        var txt = cards[i].textContent || "";
-        var exp = txt.match(/剩余天数[:：]\s*([^\s]+?)(?=系统|运行时间|免费|CPU|内存|存储|上传|下载|总上传|总下载|$)/);
-        var tags = [];
-        var nodes = cards[i].querySelectorAll("span,div,p");
-        for (var k = 0; k < nodes.length; k++) {
-          if (nodes[k].children.length) continue;
-          var tt = (nodes[k].textContent || "").trim();
-          if (/^(?:\d{1,4}\s*(?:Mbps|Gbps)|无限|IPv4|IPv6)$/i.test(tt) && tags.indexOf(tt) < 0) tags.push(tt);
-        }
-        var cur = richExtras[name] || {};
-        richExtras[name] = {
-          expiry: exp ? exp[1].trim() : (cur.expiry || ""),
-          free: /免费/.test(txt) || cur.free,
-          tags: tags.length ? tags : (cur.tags || [])
-        };
-      }
-    }
-  }
-
-  var RICH_ICONS = {
-    cpu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg>',
-    mem: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19v-3M10 19v-3M14 19v-3M18 19v-3M8 11V9M16 11V9M12 11V9M2 15h20"/><path d="M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1.1a2 2 0 0 0 0 3.837V17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5.1a2 2 0 0 0 0-3.837Z"/></svg>',
-    disk: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg>',
-    load: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>',
-    up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>',
-    down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>',
-    cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>',
-    chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg>',
-    network: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="m8 7.5 2.7 7.8M16 7.5l-2.7 7.8M8.5 6h7"/></svg>'
-  };
-
-  function richGauge(type, label, value, pct, color) {
-    return '<div class="arsn-node-gauge" data-metric="' + type + '" style="--an-gauge:' + color + ';--an-fill-pct:' + Math.max(0, Math.min(100, Number(pct) || 0)) + '%">' +
-      '<div class="arsn-node-gauge-head"><span class="arsn-node-gauge-label">' + RICH_ICONS[type] + '<span>' + label + '</span></span><strong>' + value + '</strong></div>' +
-      '<div class="arsn-node-gauge-track"></div></div>';
-  }
-
-  function richCardHTML(s) {
-    var cpu = s.cpu || 0;
-    var memPct = s.mem || 0;
-    var diskPct = s.disk || 0;
-    var load = s.load1 || 0;
-    var cores = s.cores || 1;
-    var loadPct = cores ? load / cores * 100 : 0;
-    var up = s.up || 0, down = s.down || 0;
-    var upTotal = s.upTotal || 0, downTotal = s.downTotal || 0;
-    var total = upTotal + downTotal;
-    var tcp = s.tcp || 0, udp = s.udp || 0;
-    var cc = String(s.country || "").toUpperCase();
-    if (!/^[A-Z]{2}$/.test(cc)) cc = "";
-    var os = String(s.platform || "").toLowerCase().split(/[\s\/]/)[0].replace(/[^a-z0-9_-]/g, "");
-    var ex = richExtras[s.name] || {};
-    var tagHtml = (ex.tags && ex.tags.length) ? ex.tags.slice(0, 4).map(function (tag) {
-      var cls = /Mbps|Gbps/i.test(tag) ? "is-mbps" : tag === "无限" ? "is-unlimited" : /^IPv4$/i.test(tag) ? "is-v4" : /^IPv6$/i.test(tag) ? "is-v6" : "";
-      return '<span class="arsn-node-foottag ' + cls + '">' + richEsc(tag) + "</span>";
-    }).join("") : "";
-
-    return '<article class="arsn-node-card" data-id="' + richEsc(s.id || "") + '" data-name="' + richEsc(s.name || "") + '">' +
-      '<header class="arsn-node-header"><div class="arsn-node-title-wrap"><div class="arsn-node-title-row">' +
-        '<span class="arsn-node-dot' + (s.online ? "" : " off") + '"></span>' +
-        (cc ? '<span class="fi fi-' + cc.toLowerCase() + ' arsn-node-flag-fi" title="' + richEsc(cc) + '"></span>' : "") +
-        '<a class="arsn-node-title">' + richEsc(s.name || "未命名") + "</a></div></div>" +
-        '<div class="arsn-node-actions">' +
-        (os ? '<i class="fl-' + os + ' arsn-node-os" title="' + richEsc(os) + '"></i>' : "") +
-        "</div>" +
-      "</header>" +
-      '<div class="arsn-node-vitals">' +
-        richGauge("cpu", "CPU", cpu.toFixed(2) + "%", cpu, "#3b82f6") +
-        richGauge("mem", "内存", memPct.toFixed(2) + "%", memPct, "#8b5cf6") +
-        richGauge("disk", "磁盘", diskPct.toFixed(2) + "%", diskPct, "#e97b35") +
-        richGauge("load", "负载", load.toFixed(2), loadPct, "#ec4899") +
-      "</div>" +
-      '<div class="arsn-node-info-strip">' +
-        '<div class="arsn-node-info-tile is-traffic" data-info-tile="live" style="--an-gauge:#3b82f6">' +
-          '<span class="arsn-node-info-k">' + RICH_ICONS.chart + '<span>实时流量</span></span>' +
-          '<div class="arsn-node-info-row" data-info-row="live-up"><span class="lab up">' + RICH_ICONS.up + '</span><span class="arsn-node-info-name">上传</span><strong data-info-field="live-up">' + richBytes(up) + '/s</strong></div>' +
-          '<div class="arsn-node-info-row" data-info-row="live-down"><span class="lab down">' + RICH_ICONS.down + '</span><span class="arsn-node-info-name">下载</span><strong data-info-field="live-down">' + richBytes(down) + '/s</strong></div>' +
-          '<span class="arsn-node-pulse" aria-hidden="true">' + (function () {
-            var n = Math.max(0, Math.min(14, Math.round((up + down) / 2048)));
-            var dots = "";
-            for (var d = 0; d < 14; d++) dots += '<i class="' + (d < n ? "on" : "") + '"></i>';
-            return dots;
-          })() + "</span>" +
-        "</div>" +
-        '<div class="arsn-node-info-tile is-traffic" data-info-tile="total" style="--an-gauge:#8b5cf6">' +
-          '<span class="arsn-node-info-k">' + RICH_ICONS.chart + '<span>累计流量</span></span>' +
-          '<div class="arsn-node-info-row" data-info-row="total-up"><span class="lab up">' + RICH_ICONS.up + '</span><span class="arsn-node-info-name">上传</span><strong data-info-field="total-up">' + richBytes(upTotal) + '</strong></div>' +
-          '<div class="arsn-node-info-row" data-info-row="total-down"><span class="lab down">' + RICH_ICONS.down + '</span><span class="arsn-node-info-name">下载</span><strong data-info-field="total-down">' + richBytes(downTotal) + '</strong></div>' +
-        "</div>" +
-        '<div class="arsn-node-info-tile is-network">' +
-          '<span class="arsn-node-info-k">' + RICH_ICONS.network + '<span>连接与到期</span></span>' +
-          '<div class="arsn-node-netstats">' +
-            '<div class="arsn-node-netstat"><span class="arsn-node-net-k">TCP</span><strong data-info-field="tcp">' + tcp + '</strong></div>' +
-            '<div class="arsn-node-netstat"><span class="arsn-node-net-k">UDP</span><strong data-info-field="udp">' + udp + '</strong></div>' +
-          '</div>' +
-          '<div class="arsn-node-expiry"><span class="arsn-node-expiry-icon">' + RICH_ICONS.cal + '</span><span class="arsn-node-expiry-label">到期</span><strong class="arsn-node-info-big" data-info-field="expiry">' + richEsc((ex.expiry || (ex.free ? "永久" : "—"))) + '</strong>' +
-            (ex.free ? '<span class="arsn-node-info-sub">免费</span>' : '') +
-          '</div>' +
-        '</div>' +
-      "</div>" +
-      '<div class="arsn-node-traffic">' +
-        '<div class="arsn-node-traffic-head"><span class="arsn-node-traffic-label">剩余 <strong>∞</strong></span>' +
-        '<span class="arsn-node-traffic-uptime" data-info-field="uptime">在线：' + richUptime(s.uptime) + "</span></div>" +
-        '<span class="arsn-node-traffic-track"></span>' +
-        '<span class="arsn-node-traffic-value" data-info-field="traffic-total">' + richBytes(total) + " / ∞</span>" +
-      "</div>" +
-      (tagHtml ? '<div class="arsn-node-foottags">' + tagHtml + "</div>" : "") +
-    "</article>";
-  }
-
-  function setRichField(card, field, value) {
-    var el = card.querySelector('[data-info-field="' + field + '"]');
-    value = String(value == null ? "" : value);
-    if (el && el.textContent !== value) el.textContent = value;
-  }
-
-  function updateRichTags(card, ex) {
-    var tags = ex.tags && ex.tags.length ? ex.tags.slice(0, 4) : [];
-    var signature = JSON.stringify(tags);
-    if (card.__arsnTagsSignature === undefined) {
-      var initial = card.querySelector(".arsn-node-foottags");
-      card.__arsnTagsSignature = JSON.stringify(initial ? Array.prototype.map.call(initial.children, function (tag) { return tag.textContent || ""; }) : []);
-    }
-    if (card.__arsnTagsSignature === signature) return;
-    var wrap = card.querySelector(".arsn-node-foottags");
-    if (!tags.length) {
-      if (wrap) wrap.remove();
-      card.__arsnTagsSignature = signature;
-      return;
-    }
-    var html = tags.map(function (tag) {
-      var cls = /Mbps|Gbps/i.test(tag) ? "is-mbps" : tag === "无限" ? "is-unlimited" : /^IPv4$/i.test(tag) ? "is-v4" : /^IPv6$/i.test(tag) ? "is-v6" : "";
-      return '<span class="arsn-node-foottag ' + cls + '">' + richEsc(tag) + "</span>";
-    }).join("");
-    if (!wrap) {
-      wrap = document.createElement("div");
-      wrap.className = "arsn-node-foottags";
-      card.appendChild(wrap);
-    }
-    wrap.innerHTML = html;
-    card.__arsnTagsSignature = signature;
-  }
-
-  function updateRichCard(card, s) {
-    var name = String(s.name || "未命名");
-    var country = String(s.country || "").toLowerCase();
-    if (!/^[a-z]{2}$/.test(country)) country = "";
-    var platform = String(s.platform || "").toLowerCase().split(/[\s/]/)[0].replace(/[^a-z0-9_-]/g, "");
-    var cpu = Number(s.cpu) || 0;
-    var mem = Number(s.mem) || 0;
-    var disk = Number(s.disk) || 0;
-    var load = Number(s.load1) || 0;
-    var loadPct = s.cores ? load / s.cores * 100 : 0;
-    var up = Number(s.up) || 0;
-    var down = Number(s.down) || 0;
-    var upTotal = Number(s.upTotal) || 0;
-    var downTotal = Number(s.downTotal) || 0;
-    var ex = richExtras[s.name] || {};
-
-    card.setAttribute("data-id", String(s.id || ""));
-    card.setAttribute("data-name", String(s.name || ""));
-    var title = card.querySelector(".arsn-node-title");
-    if (title && title.textContent !== name) title.textContent = name;
-    var dot = card.querySelector(".arsn-node-dot");
-    if (dot) dot.classList.toggle("off", !s.online);
-
-    var titleRow = card.querySelector(".arsn-node-title-row");
-    var flag = card.querySelector(".arsn-node-flag-fi");
-    if (country) {
-      if (!flag && titleRow) {
-        flag = document.createElement("span");
-        flag.className = "arsn-node-flag-fi fi";
-        if (title) titleRow.insertBefore(flag, title);
-      }
-      if (flag) {
-        var flagClass = "arsn-node-flag-fi fi fi-" + country;
-        if (flag.className !== flagClass) flag.className = flagClass;
-        flag.title = country.toUpperCase();
-      }
-    } else if (flag) flag.remove();
-
-    var actions = card.querySelector(".arsn-node-actions");
-    var os = card.querySelector(".arsn-node-os");
-    if (platform) {
-      if (!os && actions) {
-        os = document.createElement("i");
-        os.className = "arsn-node-os";
-        actions.appendChild(os);
-      }
-      if (os) {
-        var osClass = "fl-" + platform + " arsn-node-os";
-        if (os.className !== osClass) os.className = osClass;
-        os.title = platform;
-      }
-    } else if (os) os.remove();
-
-    var gauges = [
-      { key: "cpu", value: cpu.toFixed(2) + "%", pct: cpu },
-      { key: "mem", value: mem.toFixed(2) + "%", pct: mem },
-      { key: "disk", value: disk.toFixed(2) + "%", pct: disk },
-      { key: "load", value: load.toFixed(2), pct: loadPct }
-    ];
-    for (var gi = 0; gi < gauges.length; gi++) {
-      var gauge = card.querySelector('.arsn-node-gauge[data-metric="' + gauges[gi].key + '"]');
-      if (!gauge) continue;
-      var gaugeValue = gauge.querySelector("strong");
-      if (gaugeValue && gaugeValue.textContent !== gauges[gi].value) gaugeValue.textContent = gauges[gi].value;
-      var fill = Math.max(0, Math.min(100, Number(gauges[gi].pct) || 0)) + "%";
-      if (gauge.style.getPropertyValue("--an-fill-pct") !== fill) gauge.style.setProperty("--an-fill-pct", fill);
-    }
-
-    setRichField(card, "live-up", richBytes(up) + "/s");
-    setRichField(card, "live-down", richBytes(down) + "/s");
-    setRichField(card, "total-up", richBytes(upTotal));
-    setRichField(card, "total-down", richBytes(downTotal));
-    setRichField(card, "tcp", Number(s.tcp) || 0);
-    setRichField(card, "udp", Number(s.udp) || 0);
-    setRichField(card, "expiry", ex.expiry || (ex.free ? "永久" : "—"));
-
-    var pulse = card.querySelectorAll(".arsn-node-pulse i");
-    var active = Math.max(0, Math.min(pulse.length, Math.round((up + down) / 2048)));
-    for (var pi = 0; pi < pulse.length; pi++) pulse[pi].classList.toggle("on", pi < active);
-
-    var freeTag = card.querySelector(".arsn-node-info-sub");
-    var expiry = card.querySelector(".arsn-node-expiry");
-    if (ex.free && !freeTag && expiry) {
-      freeTag = document.createElement("span");
-      freeTag.className = "arsn-node-info-sub";
-      freeTag.textContent = "免费";
-      expiry.appendChild(freeTag);
-    } else if (!ex.free && freeTag) freeTag.remove();
-
-    setRichField(card, "uptime", "在线：" + richUptime(s.uptime));
-    setRichField(card, "traffic-total", richBytes(upTotal + downTotal) + " / ∞");
-    updateRichTags(card, ex);
-  }
-
-  function richListView() {
-    var controls = document.querySelector(".server-overview-controls");
-    var grid = document.querySelector(".server-card-list");
-    var inline = document.querySelector(".server-inline-list");
-    var list = null;
-    if (inline && inline.getClientRects().length) list = inline;
-    else if (grid && grid.getClientRects().length) list = grid;
-    else list = grid || inline;
-    if (!controls || !list || !controls.parentElement) return null;
-    var top = list;
-    while (top.parentElement && top.parentElement !== controls.parentElement) top = top.parentElement;
-    if (top.parentElement !== controls.parentElement) return null;
-    return { controls: controls, top: top };
-  }
-
-  function richOpenServer(name, id) {
-    var cards = document.querySelectorAll(".server-card-list div[class*='rounded-lg'][class*='cursor-pointer'], .server-inline-list div[class*='rounded-lg'][class*='cursor-pointer']");
-    for (var i = 0; i < cards.length; i++) {
-      if (cardName(cards[i]) === name) {
-        cards[i].click();
-        setTimeout(function () {
-          if (location.pathname.indexOf("/server/") < 0 && id) location.href = "/server/" + encodeURIComponent(id);
-        }, 350);
-        return;
-      }
-    }
-    if (id) location.href = "/server/" + encodeURIComponent(id);
-  }
-
-  function ensureRichView() {
-    var ctx = richListView();
-    if (!ctx) return null;
-    var view = document.querySelector(".arsn-richview");
-    if (!view) {
-      view = document.createElement("div");
-      view.className = "arsn-richview";
-    }
-    /* 放在列表容器前面（不是页底），表格视图的滚动容器也一起隐藏 */
-    if (view.parentElement !== ctx.controls.parentElement || view.previousElementSibling !== ctx.top) {
-      ctx.controls.parentElement.insertBefore(view, ctx.top.nextSibling);
-    }
-    if (!view.__arsnClickHandler) {
-      view.__arsnClickHandler = function (e) {
-        var card = e.target.closest(".arsn-node-card");
-        if (!card) return;
-        if (e.target.closest("a,button,input,select,textarea")) return;
-        richOpenServer(card.getAttribute("data-name"), card.getAttribute("data-id"));
-      };
-      view.__arsnClick = true;
-      view.addEventListener("click", view.__arsnClickHandler);
-    }
-    return view;
-  }
-
-  function richHideList() {
-    var ctx = richListView();
-    if (!ctx) return;
-    if (richHiddenEl && richHiddenEl !== ctx.top) richShowList();
-    if (ctx.top.style.display !== "none") {
-      richHiddenEl = ctx.top;
-      richHiddenEl.__arsnOldDisplay = richHiddenEl.style.display || "";
-      richHiddenEl.style.display = "none";
-    }
-  }
-
-  function richShowList() {
-    if (!richHiddenEl) return;
-    richHiddenEl.style.display = richHiddenEl.__arsnOldDisplay || "";
-    richHiddenEl = null;
-  }
-
-  function renderRich(force) {
-    if (disposed) return;
-    var view = ensureRichView();
-    if (!view) return; /* 列表还没渲染出来，等下一次 */
-    view.style.display = "";
-    if (!force && view.__arsnRenderedRevision === dataRevision) {
-      richInitialized = true;
-      richDirty = false;
-      return;
-    }
-    collectRichExtras();
-    var keys = Object.keys(servers);
-    if (!keys.length) {
-      if (!view.querySelector(".arsn-richempty")) {
-        while (view.firstChild) view.removeChild(view.firstChild);
-        var empty = document.createElement("div");
-        empty.className = "arsn-richempty";
-        empty.textContent = "暂无服务器数据";
-        view.appendChild(empty);
-      }
-      view.__arsnRenderedRevision = dataRevision;
-      richInitialized = true;
-      richDirty = false;
-      return;
-    }
-
-    var emptyState = view.querySelector(".arsn-richempty");
-    if (emptyState) emptyState.remove();
-    var existing = Object.create(null);
-    var oldCards = view.querySelectorAll(".arsn-node-card[data-name]");
-    for (var oi = 0; oi < oldCards.length; oi++) existing[oldCards[oi].getAttribute("data-name")] = oldCards[oi];
-
-    var cursor = view.firstElementChild;
-    for (var i = 0; i < keys.length; i++) {
-      var name = keys[i];
-      var server = servers[name];
-      var card = existing[name];
-      /* 一次性升级旧版卡片结构；普通数据刷新只更新字段，不替换卡片 DOM。 */
-      if (card && !card.querySelector('[data-info-field="live-up"]')) {
-        card.remove();
-        card = null;
-      }
-      if (!card) {
-        var holder = document.createElement("div");
-        holder.innerHTML = richCardHTML(server);
-        card = holder.firstElementChild;
-      }
-      updateRichCard(card, server);
-      if (card !== cursor) view.insertBefore(card, cursor);
-      cursor = card.nextElementSibling;
-    }
-    while (cursor) {
-      var next = cursor.nextElementSibling;
-      cursor.remove();
-      cursor = next;
-    }
-    view.__arsnRenderedRevision = dataRevision;
-    richInitialized = true;
-    richDirty = false;
-  }
-
-  function findViewBtn(kind) {
-    var btns = document.querySelectorAll(".server-overview-controls button");
-    if (kind === "list") {
-      var marked = document.querySelector("[data-arsn-view-cycle]");
-      if (marked) return marked;
-      return btns[2] || null;
-    }
-    for (var i = 0; i < btns.length; i++) {
-      var html = btns[i].innerHTML;
-      if (kind === "list" && /M14 17h2\.75/.test(html)) return btns[i];
-      if (kind === "grid" && /M4\.25 2A2\.25/.test(html)) return btns[i];
-    }
-    return null;
-  }
-
-  function clickNative(btn) {
-    if (!btn) return false;
-    /* 用真实 click 事件保留 React 的事件语义；临时移除捕获监听以避免递归。 */
-    var handler = btn.__arsnCycleHandler || onViewCycleClick;
-    var hooked = !!btn.__arsnCycleNew;
-    if (hooked) btn.removeEventListener("click", handler, true);
-    try { btn.click(); } finally {
-      if (hooked) btn.addEventListener("click", handler, true);
-    }
-    return true;
-  }
-
-  function nativeIsList() {
-    return !!document.querySelector(".server-inline-list");
-  }
-
-  function applyViewMode(mode) {
-    viewMode = mode;
-    try { localStorage.setItem("arsn-view-mode", String(mode)); } catch (e) {}
-    /* 三种视图都在当前 DOM 内切换，避免 location.reload() 造成页面闪烁和状态丢失。 */
-    if (mode === 2) {
-      setRichMode(true);
-      updateViewBtnIcon(2);
-      return;
-    }
-    setRichMode(false);
-    /* 三竖线按钮原生行为是「在卡片/列表之间切换」，用它来回切 */
-    var isList = nativeIsList();
-    if ((mode === 0 && isList) || (mode === 1 && !isList)) {
-      clickNative(findViewBtn("list"));
-    }
-    scheduleViewIcon(mode, 80);
-    scheduleViewIcon(mode, 420);
-  }
-
-  function scheduleViewIcon(mode, delay) {
-    var timer = setTimeout(function () {
-      updateViewBtnIcon(mode);
-      var index = viewIconTimers.indexOf(timer);
-      if (index >= 0) viewIconTimers.splice(index, 1);
-    }, delay);
-    viewIconTimers.push(timer);
-  }
-
-  function onViewCycleClick(e) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    var cur = richMode ? 2 : (nativeIsList() ? 1 : 0);
-    applyViewMode((cur + 1) % 3);
-  }
-
-  var GRID_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon" class="size-[13px]"><rect x="2.8" y="2.8" width="6.2" height="6.2" rx="1.2"/><rect x="11" y="2.8" width="6.2" height="6.2" rx="1.2"/><rect x="2.8" y="11" width="6.2" height="6.2" rx="1.2"/><rect x="11" y="11" width="6.2" height="6.2" rx="1.2"/></svg>';
-  var DETAIL_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon" class="size-[13px]"><path fill-rule="evenodd" d="M4 2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm1 4v2h10V6H5Zm0 4v1.6h10V10H5Zm0 3.6v1.6h6v-1.6H5Z" clip-rule="evenodd"/></svg>';
-
-  var LIST_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon" class="size-[13px]"><path d="M3.2 4h3.2v12H3.2zM8.4 4h3.2v12H8.4zM13.6 4h3.2v12h-3.2z"/></svg>';
-
-  function updateViewBtnIcon(mode) {
-    var btns = document.querySelectorAll(".server-overview-controls button");
-    var btn = btns[2];
-    if (!btn) return;
-    /* 视图照常切换，按钮图标始终沿用主题原生图标。 */
-    if (!btn.__arsnNativeViewIcon) btn.__arsnNativeViewIcon = btn.innerHTML || LIST_ICON;
-    btn.setAttribute("data-arsn-view-cycle", "1");
-    btn.setAttribute("data-arsn-mode", String(mode));
-    if (btn.innerHTML !== btn.__arsnNativeViewIcon) btn.innerHTML = btn.__arsnNativeViewIcon;
-  }
-
-  function ensureViewCycle() {
-    var controls = document.querySelector(".server-overview-controls");
-    if (!controls) return;
-    var listBtn = findViewBtn("list");
-    if (listBtn) {
-      listBtn.setAttribute("data-arsn-view-cycle", "1");
-      if (!listBtn.__arsnCycleNew || listBtn.__arsnCycleHandler !== onViewCycleClick) {
-        if (listBtn.__arsnCycleHandler) listBtn.removeEventListener("click", listBtn.__arsnCycleHandler, true);
-        listBtn.__arsnCycleHandler = onViewCycleClick;
-        listBtn.__arsnCycleNew = true;
-        listBtn.addEventListener("click", listBtn.__arsnCycleHandler, true);
-      }
-    }
-    updateViewBtnIcon(richMode ? 2 : (nativeIsList() ? 1 : 0));
-  }
-
-  function setRichMode(on) {
-    richMode = !!on;
-    try { localStorage.setItem("arsn-rich-mode", richMode ? "1" : "0"); } catch (e) {}
-    document.documentElement.classList.toggle("arsn-rich-on", richMode);
-    ensureRichView();
-    if (richMode) renderRich(true);
-  }
-
   function ensureSortMenu() {
     var sels = document.querySelectorAll('select[aria-label="Sort metric"]');
     for (var i = 0; i < sels.length; i++) {
@@ -1770,27 +1216,6 @@
   }
 
   /* 塔菲气泡：随机台词 + 点击互动 */
-  function fitBubbleWithinViewport(bubble) {
-    if (!bubble) return;
-    bubble.style.removeProperty("top");
-    bubble.style.removeProperty("bottom");
-    if (!bubble.classList.contains("arsn-media")) return;
-
-    var viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-    var margin = 8;
-    var rect = bubble.getBoundingClientRect();
-    if (rect.top >= margin && rect.bottom <= viewportHeight - margin) return;
-
-    var targetTop = rect.top < margin
-      ? margin
-      : Math.max(margin, viewportHeight - margin - rect.height);
-    var parent = bubble.offsetParent;
-    if (!parent) return;
-    var parentRect = parent.getBoundingClientRect();
-    bubble.style.setProperty("top", (targetTop - parentRect.top) + "px", "important");
-    bubble.style.setProperty("bottom", "auto", "important");
-  }
-
   function ensureBubble() {
     var img = document.querySelector("img.arsn-taffy");
     if (!img || !img.parentElement) return;
@@ -1825,7 +1250,6 @@
         meme.alt = "塔菲表情";
         meme.loading = "eager";
         meme.onerror = function () { b.classList.remove("arsn-on"); };
-        meme.onload = function () { fitBubbleWithinViewport(b); };
         meme.src = text.image;
         b.classList.add("arsn-media");
         b.appendChild(meme);
@@ -1833,8 +1257,6 @@
         b.textContent = String(text == null ? "" : text);
       }
       b.classList.add("arsn-on");
-      if (window.requestAnimationFrame) window.requestAnimationFrame(function () { fitBubbleWithinViewport(b); });
-      else setTimeout(function () { fitBubbleWithinViewport(b); }, 0);
       clearTimeout(b.__arsnHide);
       b.__arsnHide = setTimeout(function () { b.classList.remove("arsn-on"); }, ms || 6200);
     };
@@ -1998,15 +1420,6 @@
     ensureLogo();
     ensureMapCard();
     ensureMusicButton();
-    ensureViewCycle();
-    /* Create and seed the hidden detail view on page visit; toggling only changes visibility. */
-    var richView = ensureRichView();
-    if (richMode || !richInitialized || (richView && richView.__arsnRenderedRevision === undefined)) renderRich();
-    if (pendingViewMode >= 0) {
-      var rc = document.querySelector(".server-overview-controls");
-      var rl = document.querySelector(".server-card-list") || document.querySelector(".server-inline-list");
-      if (rc && rl) { var vm = pendingViewMode; pendingViewMode = -1; applyViewMode(vm); }
-    }
     svcRender(false);
   }
 
@@ -2070,7 +1483,6 @@
   function destroy() {
     disposed = true;
     clearGlobalEvents();
-    if (richTimer) { clearInterval(richTimer); richTimer = null; }
     try { mpClose(); } catch (e) {}
     mpCloseBar(true);
     clearInterval(tickTimer);
@@ -2083,25 +1495,9 @@
     clearTimeout(svcAnimTimer);
     clearTimeout(broadcastStartTimer);
     broadcastStartTimer = 0;
-    for (var vit = 0; vit < viewIconTimers.length; vit++) clearTimeout(viewIconTimers[vit]);
-    viewIconTimers.length = 0;
     bubbleEl = null;
     closeSortMenu();
-    document.documentElement.classList.remove("arsn-rich-on");
-    if (richHiddenEl) richShowList();
 
-    var cycleBtns = document.querySelectorAll("[data-arsn-view-cycle]");
-    for (var ci = 0; ci < cycleBtns.length; ci++) {
-      var cycle = cycleBtns[ci];
-      if (cycle.__arsnCycleHandler) {
-        try { cycle.removeEventListener("click", cycle.__arsnCycleHandler, true); } catch (e) {}
-      }
-      delete cycle.__arsnCycleHandler;
-      delete cycle.__arsnCycleNew;
-      delete cycle.__arsnNativeViewIcon;
-      cycle.removeAttribute("data-arsn-view-cycle");
-      cycle.removeAttribute("data-arsn-mode");
-    }
     var sortSelects = document.querySelectorAll('select[aria-label="Sort metric"]');
     for (var si = 0; si < sortSelects.length; si++) {
       var sortSel = sortSelects[si];
@@ -2127,13 +1523,6 @@
     sortObservedLists.length = 0;
     for (var sat = 0; sat < sortApplyTimers.length; sat++) clearTimeout(sortApplyTimers[sat]);
     sortApplyTimers.length = 0;
-    var richViews = document.querySelectorAll(".arsn-richview");
-    for (var vi = 0; vi < richViews.length; vi++) {
-      if (richViews[vi].__arsnClickHandler) richViews[vi].removeEventListener("click", richViews[vi].__arsnClickHandler);
-      delete richViews[vi].__arsnClickHandler;
-      delete richViews[vi].__arsnClick;
-    }
-
     var svcSec = serviceSection();
     if (svcSec) {
       var svcDots = svcSec.querySelector(".arsn-svc-dots");
@@ -2274,6 +1663,7 @@
     tab: "play",
     busy: false,
     loading: false,
+    playlistVersion: 0,
     bar: null,
     barLine: "",
     lyricLoading: false,
@@ -2672,11 +2062,11 @@
     window.dispatchEvent(new CustomEvent("arsnMusicModeChanged", { detail: nextMode }));
   }
 
-  function mpLoadPlaylist() {
-    return mpXun("playlist", { id: MUSIC_PLAYLIST_ID }).then(function (d) {
+  function mpLoadPlaylist(playlistId, version) {
+    return mpXun("playlist", { id: playlistId }).then(function (d) {
       var songs = (d && d.songs) || [];
       if (!songs.length) throw new Error("歌单为空");
-      mp.tracks = songs.map(function (s) {
+      return songs.map(function (s) {
         return {
           id: s.id,
           name: s.name || "未知歌曲",
@@ -2686,15 +2076,14 @@
           lrc: ""
         };
       });
-      mpRenderList();
-      return mp.tracks;
     }).catch(function (err) {
+      if (version !== mp.playlistVersion) return [];
       /* 兜底：Meting 歌单（自带播放地址和歌词地址） */
-      return fetch(MUSIC_METING + "?type=playlist&id=" + encodeURIComponent(MUSIC_PLAYLIST_ID), { cache: "no-store" })
+      return fetch(MUSIC_METING + "?type=playlist&id=" + encodeURIComponent(playlistId), { cache: "no-store" })
         .then(function (r) { return r.json(); })
         .then(function (list) {
           if (!Array.isArray(list) || !list.length) throw err;
-          mp.tracks = list.map(function (s, i) {
+          return list.map(function (s, i) {
             return {
               id: i,
               name: s.name || "未知歌曲",
@@ -2704,8 +2093,6 @@
               lrc: s.lrc || ""
             };
           });
-          mpRenderList();
-          return mp.tracks;
         });
     });
   }
@@ -3014,15 +2401,28 @@
     document.addEventListener("keydown", mpEsc);
   }
 
-  function mpEnsurePlaylist() {
+  function mpEnsurePlaylist(forceReload) {
+    if (forceReload) {
+      mp.playlistVersion++;
+      mp.tracks = [];
+      mp.idx = -1;
+      mp.loading = false;
+      mpRenderList();
+    }
     if (mp.tracks.length || mp.loading) return;
     mp.loading = true;
+    var version = mp.playlistVersion;
+    var playlistId = MUSIC_PLAYLIST_ID;
     mpStatus("加载歌单…");
-    mpLoadPlaylist().then(function () {
+    mpLoadPlaylist(playlistId, version).then(function (tracks) {
+      if (version !== mp.playlistVersion) return;
       mp.loading = false;
+      mp.tracks = tracks;
+      mpRenderList();
       mpStatus("");
       mpSyncButtons();
     }).catch(function () {
+      if (version !== mp.playlistVersion) return;
       mp.loading = false;
       mpSeedFallback();
       mpStatus("歌单读取失败，使用备用列表");
@@ -3049,74 +2449,26 @@
     mpEnsurePlaylist();
   }
 
-  /* Read optional theme settings from the dashboard custom_code field without
-     executing the old DOM takeover script a second time. Users can assign
-     plain values in that field, for example:
-     window.ArsnThemeConfig = {
-       playlistId: "443797814",
-       footerLinks: [{"name":"Docs","link":"https://example.com"}]
-     };
-  */
-  function arsnReadAssignment(code, key) {
-    var re = new RegExp("(?:window\\.)?" + key + "\\s*=\\s*");
-    var match = re.exec(code);
-    if (!match) return undefined;
-    var start = match.index + match[0].length;
-    var quote = "";
-    var depth = 0;
-    var escaped = false;
-    for (var i = start; i < code.length; i++) {
-      var ch = code.charAt(i);
-      if (quote) {
-        if (escaped) escaped = false;
-        else if (ch === "\\") escaped = true;
-        else if (ch === quote) quote = "";
-        continue;
-      }
-      if (ch === '"' || ch === "'" || ch === "`") { quote = ch; continue; }
-      if (ch === "[" || ch === "{") depth++;
-      else if (ch === "]" || ch === "}") depth--;
-      else if (ch === ";" && depth === 0) break;
-    }
-    var expression = code.slice(start, i).trim();
-    if (!expression) return undefined;
-    try { return JSON.parse(expression); } catch (e) {}
-    return undefined;
-  }
-
-  function applyArsnCustomCode(code) {
-    if (!code || typeof code !== "string") return;
-    var parsed = arsnReadAssignment(code, "ArsnThemeConfig");
-    var values = Object.assign(
-      {},
-      window.ArsnThemeConfig || {},
-      parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}
-    );
-    var aliases = {
-      playlistId: "ArsnMusicPlaylistId",
-      backgroundApi: "ArsnBackgroundApi",
-      logoUrl: "ArsnLogoUrl",
-      overviewIconUrl: "ArsnOverviewIconUrl",
-      mascotUrl: "ArsnMascotUrl",
-      memeImages: "ArsnMemeImages",
-      apiKey: "ArsnApiKey",
-      weatherKey: "ArsnWeatherKey"
-    };
-    Object.keys(aliases).forEach(function (key) {
-      var value = arsnReadAssignment(code, aliases[key]);
-      if (value !== undefined) values[key] = value;
-    });
-    window.ArsnThemeConfig = values;
+  function applyArsnThemeConfig(config) {
+    var values = config && typeof config === "object" && !Array.isArray(config) ? config : {};
     var previousApiKey = XUN_API_KEY;
     var previousPlaylist = MUSIC_PLAYLIST_ID;
-    if (typeof values.playlistId === "string" && values.playlistId.trim()) MUSIC_PLAYLIST_ID = values.playlistId.trim();
-    if (typeof values.backgroundApi === "string" && values.backgroundApi.trim()) {
-      var backgroundApi = values.backgroundApi.trim().replace(/"/g, "\\\"");
-      document.documentElement.style.setProperty("--arsn-bg", 'url("' + backgroundApi + '")');
-    }
-    if (typeof values.logoUrl === "string" && values.logoUrl.trim()) LOGO_DATA = values.logoUrl.trim();
-    if (typeof values.overviewIconUrl === "string" && values.overviewIconUrl.trim()) TITLE_ICON = values.overviewIconUrl.trim();
-    if (typeof values.mascotUrl === "string" && values.mascotUrl.trim()) TAFFY_SRC = values.mascotUrl.trim();
+    var backgroundApi = typeof values.backgroundApi === "string" && values.backgroundApi.trim()
+      ? values.backgroundApi.trim().replace(/"/g, "\\\"")
+      : DEFAULT_BACKGROUND_API;
+    MUSIC_PLAYLIST_ID = typeof values.playlistId === "string" && values.playlistId.trim()
+      ? values.playlistId.trim()
+      : DEFAULT_MUSIC_PLAYLIST_ID;
+    LOGO_DATA = typeof values.logoUrl === "string" && values.logoUrl.trim()
+      ? values.logoUrl.trim()
+      : "/arsn-assets/logo.png";
+    TITLE_ICON = typeof values.overviewIconUrl === "string" && values.overviewIconUrl.trim()
+      ? values.overviewIconUrl.trim()
+      : "/arsn-assets/title-icon.webp";
+    TAFFY_SRC = typeof values.mascotUrl === "string" && values.mascotUrl.trim()
+      ? values.mascotUrl.trim()
+      : "/arsn-assets/taffy.webp";
+    document.documentElement.style.setProperty("--arsn-bg", 'url("' + backgroundApi + '")');
     if (Array.isArray(values.memeImages)) {
       ARSN_MEME_DATA = values.memeImages.filter(function (image) {
         return typeof image === "string" && image.trim().length > 0;
@@ -3126,25 +2478,51 @@
     }
     var apiKey = typeof values.apiKey === "string" ? values.apiKey : values.weatherKey;
     XUN_API_KEY = typeof apiKey === "string" ? apiKey.trim() : "";
-    window.CustomLogo = LOGO_DATA;
-    window.CustomIllustration = TAFFY_SRC;
-    window.dispatchEvent(new Event("runtimeConfigChange"));
+    if (window.CustomLogo !== LOGO_DATA) window.CustomLogo = LOGO_DATA;
+    if (window.CustomIllustration !== TAFFY_SRC) window.CustomIllustration = TAFFY_SRC;
     setIcon("icon", "32x32", FAVICON_32);
     setIcon("icon", "16x16", FAVICON_16);
     setIcon("apple-touch-icon", "", LOGO_DATA);
     swapMascot();
     ensureTitle();
-    if (MUSIC_PLAYLIST_ID !== previousPlaylist && mp.tracks.length) {
-      mp.tracks = [];
-      mp.idx = -1;
-      mp.loading = false;
-      mpEnsurePlaylist();
+    if (MUSIC_PLAYLIST_ID !== previousPlaylist || XUN_API_KEY !== previousApiKey) {
+      mpEnsurePlaylist(true);
     }
     if (XUN_API_KEY !== previousApiKey) {
       weatherAt = 0;
       xunOk = null;
       fetchWeather();
     }
+  }
+
+  function applyArsnCustomCode(code) {
+    var values = {};
+    if (typeof code === "string" && code.trim()) {
+      try {
+        values = parseThemeConfig(code) || {};
+      } catch (e) {
+        console.warn("Unable to read ArsnThemeConfig. Check the configuration object syntax.");
+      }
+      var aliases = {
+        playlistId: "ArsnMusicPlaylistId",
+        backgroundApi: "ArsnBackgroundApi",
+        logoUrl: "ArsnLogoUrl",
+        overviewIconUrl: "ArsnOverviewIconUrl",
+        mascotUrl: "ArsnMascotUrl",
+        memeImages: "ArsnMemeImages",
+        apiKey: "ArsnApiKey",
+        weatherKey: "ArsnWeatherKey"
+      };
+      Object.keys(aliases).forEach(function (key) {
+        if (Object.prototype.hasOwnProperty.call(values, key)) return;
+        try {
+          var value = parseThemeConfigValue(code, aliases[key]);
+          if (value !== undefined) values[key] = value;
+        } catch (e) {}
+      });
+    }
+    window.ArsnThemeConfig = values;
+    applyArsnThemeConfig(values);
   }
 
   window.__arsnApplyCustomCode = applyArsnCustomCode;
@@ -3191,18 +2569,14 @@
   }
 
   function boot() {
+    bindGlobal(window, "runtimeConfigChange", function () {
+      applyArsnThemeConfig(window.ArsnThemeConfig);
+    });
+    applyArsnThemeConfig(window.ArsnThemeConfig);
     try {
       var savedServerSort = localStorage.getItem("arsn-server-sort");
       if (savedServerSort === "process" || savedServerSort === "conn") serverSort = savedServerSort;
     } catch (e) {}
-    try {
-      var rawView = localStorage.getItem("arsn-view-mode");
-      if (rawView !== null) {
-        var savedView = parseInt(rawView, 10);
-        if (savedView === 0 || savedView === 1 || savedView === 2) pendingViewMode = savedView;
-      }
-    } catch (e) {}
-    richMode = false;
     scan();
     mpEnsurePlaylist();
     mpRestoreBar();
@@ -3216,7 +2590,6 @@
     }
 
     tickTimer = setInterval(tick, CFG.interval);
-    richTimer = setInterval(function () { if (richMode && richDirty) renderRich(); }, 1000); /* 仅在收到新数据时同步详情卡片 */
     sweepTimer = setInterval(scheduleScan, CFG.scanFallbackInterval); /* MutationObserver 失效时的低频兜底 */
     svcTimer = setInterval(function () { svcRender(true); }, CFG.svcInterval);
 
@@ -3233,9 +2606,6 @@
 
     /* 排序菜单关闭时机 */
     bindGlobal(window, "resize", closeSortMenu);
-    bindGlobal(window, "resize", function () { fitBubbleWithinViewport(bubbleEl); });
-    bindGlobal(window, "scroll", function () { fitBubbleWithinViewport(bubbleEl); });
-    bindGlobal(window, "scroll", function () { fitBubbleWithinViewport(bubbleEl); });
     bindGlobal(window, "scroll", closeSortMenu);
     /* 音乐面板跟着按钮/视口走，屏幕变小或被裁掉时重新贴回 */
     bindGlobal(window, "resize", mpPositionPanel);

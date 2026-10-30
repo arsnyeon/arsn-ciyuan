@@ -106,6 +106,7 @@ afterEach(() => {
 	window.ForceSortOrder = undefined;
 	window.ForceTheme = undefined;
 	window.CustomLogo = undefined;
+	window.ArsnThemeConfig = undefined;
 	window.CustomDesc = undefined;
 	window.CustomLinks = undefined;
 	window.CustomIllustration = undefined;

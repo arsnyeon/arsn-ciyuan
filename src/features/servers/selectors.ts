@@ -62,6 +62,7 @@ export function selectServers({
 			down: 0,
 			downSpeed: 0,
 			filteredServers: EMPTY_SERVER_LIST,
+			allServers: EMPTY_SERVER_LIST,
 			offlineServers: 0,
 			onlineServers: 0,
 			totalServers: 0,
@@ -129,6 +130,7 @@ export function selectServers({
 		return {
 			...overview,
 			filteredServers: [...onlineServers, ...offlineServers],
+			allServers: groupFilteredServers.map((item) => item.server),
 			totalServers: groupFilteredServers.length,
 		};
 	}
@@ -203,6 +205,7 @@ export function selectServers({
 	return {
 		...overview,
 		filteredServers: sortedServers.map((item) => item.server),
+		allServers: groupFilteredServers.map((item) => item.server),
 		totalServers: groupFilteredServers.length,
 	};
 }

@@ -14,6 +14,7 @@ interface Window {
 		memeImages?: string[];
 		/** Legacy alias; apiKey is the shared key for XunJinLu APIs. */
 		weatherKey?: string;
+		[key: string]: unknown;
 	};
 	CustomBackgroundImage: string;
 	CustomMobileBackgroundImage: string;
