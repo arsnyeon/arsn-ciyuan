@@ -31,6 +31,11 @@ function detectEmojiFlagSupport() {
 // Load it only when the SVG fallback is actually needed.
 let flagCssPromise: Promise<unknown> | undefined;
 function ensureFlagCss() {
+	// The CSS module is a browser asset; importing it under Vitest can execute
+	// its runtime in a non-DOM worker and throw "window is not defined".
+	if (typeof window === "undefined" || import.meta.env.MODE === "test") {
+		return Promise.resolve();
+	}
 	if (!flagCssPromise) {
 		flagCssPromise = import("flag-icons/css/flag-icons.min.css").catch(
 			() => undefined,
