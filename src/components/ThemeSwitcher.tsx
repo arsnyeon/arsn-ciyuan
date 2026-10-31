@@ -20,8 +20,9 @@ export function ModeToggle() {
 
 	const { backgroundImage: customBackgroundImage } = useRuntimeConfig();
 
-	const handleSelect = (e: Event, newTheme: Theme) => {
-		e.preventDefault();
+	const handleSelect = (_e: Event, newTheme: Theme) => {
+		// Radix closes the menu after onSelect by default. Calling preventDefault
+		// here was what kept the theme menu open after picking an option.
 		setTheme(newTheme);
 	};
 

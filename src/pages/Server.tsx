@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
-import GlobalMap from "@/components/GlobalMap";
+import { lazy, Suspense, useMemo } from "react";
 import HomeSkeleton from "@/components/loading/HomeSkeleton";
+import MapSkeleton from "@/components/loading/MapSkeleton";
 import ServerOverview from "@/components/ServerOverview";
 import { ServiceTracker } from "@/components/ServiceTracker";
 import {
@@ -18,6 +18,10 @@ import { useStatus } from "@/hooks/use-status";
 import { useWebSocketContext } from "@/hooks/use-websocket-context";
 import { fetchServerGroup, fetchService } from "@/lib/nezha-api";
 import { useRuntimeConfig } from "@/lib/runtime-config";
+
+// The map pulls in ~1 MB of GeoJSON plus d3-geo. It is off by default, so keep
+// it out of the initial bundle and only fetch it when the map is shown.
+const GlobalMap = lazy(() => import("@/components/GlobalMap"));
 
 export default function Servers({
 	backendError,
@@ -122,7 +126,9 @@ export default function Servers({
 				customBackgroundImage={customBackgroundImage}
 			/>
 			{hasServers && showMap === "1" && (
-				<GlobalMap now={nezhaWsData.now} serverList={nezhaWsData.servers} />
+				<Suspense fallback={<MapSkeleton />}>
+					<GlobalMap now={nezhaWsData.now} serverList={nezhaWsData.servers} />
+				</Suspense>
 			)}
 			{hasServers && showServices === "1" && (
 				<ServiceTracker serverList={filteredServers} />

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import dayjs from "dayjs";
 import { ImageMinus } from "lucide-react";
-import { DateTime } from "luxon";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -30,18 +30,18 @@ interface TimeState {
 
 const useCurrentTime = () => {
 	const [time, setTime] = useState<TimeState>({
-		hh: DateTime.now().setLocale("en-US").hour,
-		mm: DateTime.now().setLocale("en-US").minute,
-		ss: DateTime.now().setLocale("en-US").second,
+		hh: dayjs().hour(),
+		mm: dayjs().minute(),
+		ss: dayjs().second(),
 	});
 
 	useEffect(() => {
 		const intervalId = setInterval(() => {
-			const now = DateTime.now().setLocale("en-US");
+			const now = dayjs();
 			setTime({
-				hh: now.hour,
-				mm: now.minute,
-				ss: now.second,
+				hh: now.hour(),
+				mm: now.minute(),
+				ss: now.second(),
 			});
 		}, 1000);
 

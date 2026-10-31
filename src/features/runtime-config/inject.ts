@@ -1,5 +1,34 @@
 let disposeCurrent: (() => void) | undefined;
 
+type HtmlPolicy = { createHTML(html: string): string };
+let htmlPolicy: HtmlPolicy | undefined;
+
+/** Some Nezha deployments enable Trusted Types; plain innerHTML throws there. */
+function toTrustedHtml(html: string): string {
+	if (htmlPolicy) return htmlPolicy.createHTML(html);
+	const factory = (
+		window as unknown as {
+			trustedTypes?: {
+				createPolicy?: (
+					name: string,
+					rules: { createHTML: (value: string) => string },
+				) => HtmlPolicy;
+			};
+		}
+	).trustedTypes;
+	if (factory?.createPolicy) {
+		try {
+			htmlPolicy = factory.createPolicy("arsn-inject", {
+				createHTML: (value) => value,
+			});
+			return htmlPolicy.createHTML(html);
+		} catch {
+			// A policy with this name may already exist; fall through.
+		}
+	}
+	return html;
+}
+
 /** Inject trusted dashboard custom_code in document order. Removing script nodes
  * cannot undo arbitrary JavaScript side effects or cancel scripts already run. */
 export async function InjectContext(
@@ -59,7 +88,7 @@ export async function InjectContext(
 			}
 		});
 	const container = document.createElement("div");
-	container.innerHTML = content;
+	container.innerHTML = toTrustedHtml(content);
 	try {
 		check();
 		for (const source of Array.from(container.childNodes)) {

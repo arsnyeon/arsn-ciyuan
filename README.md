@@ -50,6 +50,8 @@ window.ArsnThemeConfig = {
 
 对象字段请使用双引号，且不要在对象内添加注释或尾随逗号，这样配置对象才能被主题读取。
 
+> v1.0.2 起，样式和交互都已编译进主题包，自定义代码只需要保留 `window.ArsnThemeConfig`。旧版几百 KB 的 CSS/JS 不会再执行，但仍会随 `/api/v1/setting` 下载并解析，明显拖慢首屏；建议按 [`docs/custom-code.example.js`](docs/custom-code.example.js) 精简到 1 KB 以内。
+
 | 配置项 | 用途 | 默认值 |
 | --- | --- | --- |
 | `playlistId` | 网易云歌单 ID，供音乐播放器读取歌单 | `443797814` |
@@ -84,9 +86,12 @@ pnpm install --frozen-lockfile
 pnpm run dev
 pnpm run verify
 pnpm run build
+pnpm run geo:build   # 仅修改地图源数据后需要：重新生成 TopoJSON
 ```
 
 `pnpm run build` 生成 `dist/`。GitHub Actions 在推送版本标签时会构建并发布 `dist.zip`。
+
+地图数据已从约 988 KB 的 GeoJSON 换成约 110 KB 的 TopoJSON（`src/assets/countries.topo.json`），并由地图懒加载 chunk 按需加载；修改 `scripts/data/countries.geojson` 后执行 `pnpm run geo:build` 即可重新生成。
 
 ## 鸣谢
 

@@ -16,10 +16,8 @@ import "./i18n";
 import "./index.css";
 import "./theme/arsn-theme.css";
 import "./theme/arsn-runtime.js";
-// Bundled instead of loaded from jsdelivr: the CDN <link> in index.html was
-// render-blocking and unreliable on mainland networks. Vite hashes the flag
-// sprites into assets/, so they inherit the immutable cache headers.
-import "flag-icons/css/flag-icons.min.css";
+// flag-icons CSS is loaded on demand by ServerFlag (SVG fallback only); the
+// full set is ~400 KB and unnecessary when native emoji flags are available.
 
 const queryClient = new QueryClient();
 const ReactQueryDevtools = import.meta.env.DEV

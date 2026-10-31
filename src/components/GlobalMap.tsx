@@ -1,8 +1,11 @@
 import { geoEquirectangular, geoPath } from "d3-geo";
+import type { Feature, FeatureCollection, Geometry } from "geojson";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { feature } from "topojson-client";
+import type { Topology } from "topojson-specification";
+import countriesTopo from "@/assets/countries.topo.json";
 import useTooltip from "@/hooks/use-tooltip";
-import { geoJsonString } from "@/lib/geo-json-string";
 import { countryCoordinates } from "@/lib/geo-limit";
 import { useRuntimeConfig } from "@/lib/runtime-config";
 import { cn, formatNezhaInfo } from "@/lib/utils";
@@ -10,19 +13,20 @@ import type { NezhaServer } from "@/types/nezha-api";
 
 import MapTooltip from "./MapTooltip";
 
-const geoJson = JSON.parse(geoJsonString) as {
-	features: Array<{
-		type: "Feature";
-		properties: {
-			iso_a2_eh: string;
-			iso_a3_eh: string;
-			[key: string]: string;
-		};
-		geometry: never;
-	}>;
+type CountryProperties = {
+	name: string;
+	iso_a2_eh: string;
+	iso_a3_eh: string;
 };
+type CountryFeature = Feature<Geometry, CountryProperties>;
 
-const filteredFeatures = geoJson.features.filter(
+const topology = countriesTopo as unknown as Topology;
+const collection = feature(
+	topology,
+	topology.objects.countries,
+) as unknown as FeatureCollection<Geometry, CountryProperties>;
+
+const filteredFeatures: CountryFeature[] = collection.features.filter(
 	(feature) => feature.properties.iso_a3_eh !== "",
 );
 
@@ -98,15 +102,7 @@ interface InteractiveMapProps {
 	serverCounts: { [key: string]: number };
 	width: number;
 	height: number;
-	filteredFeatures: {
-		type: "Feature";
-		properties: {
-			iso_a3_eh: string;
-			iso_a2_eh: string;
-			[key: string]: string;
-		};
-		geometry: never;
-	}[];
+	filteredFeatures: CountryFeature[];
 	countryServers: Record<string, TooltipServer[]>;
 }
 

@@ -53,18 +53,12 @@ importers:
       '@tanstack/react-query':
         specifier: 5.101.0
         version: 5.101.0(react@19.2.7)
-      '@tanstack/react-query-devtools':
-        specifier: 5.101.0
-        version: 5.101.0(@tanstack/react-query@5.101.0(react@19.2.7))(react@19.2.7)
       '@tanstack/react-table':
         specifier: 8.21.3
         version: 8.21.3(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@types/d3-geo':
         specifier: 3.1.0
         version: 3.1.0
-      '@types/luxon':
-        specifier: 3.7.1
-        version: 3.7.1
       class-variance-authority:
         specifier: 0.7.1
         version: 0.7.1
@@ -95,9 +89,6 @@ importers:
       lucide-react:
         specifier: 1.17.0
         version: 1.17.0(react@19.2.7)
-      luxon:
-        specifier: 3.7.2
-        version: 3.7.2
       react:
         specifier: 19.2.7
         version: 19.2.7
@@ -122,6 +113,9 @@ importers:
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@4.3.2)
+      topojson-client:
+        specifier: 3.1.0
+        version: 3.1.0
     devDependencies:
       '@biomejs/biome':
         specifier: 2.4.16
@@ -129,6 +123,9 @@ importers:
       '@tailwindcss/postcss':
         specifier: ^4.3.2
         version: 4.3.2
+      '@tanstack/react-query-devtools':
+        specifier: 5.101.0
+        version: 5.101.0(@tanstack/react-query@5.101.0(react@19.2.7))(react@19.2.7)
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.10.0(@testing-library/dom@10.4.1)
@@ -138,6 +135,9 @@ importers:
       '@testing-library/user-event':
         specifier: ^14.6.1
         version: 14.6.8(@testing-library/dom@10.4.1)
+      '@types/geojson':
+        specifier: 7946.0.16
+        version: 7946.0.16
       '@types/node':
         specifier: 25.9.2
         version: 25.9.2
@@ -147,6 +147,12 @@ importers:
       '@types/react-dom':
         specifier: 19.2.3
         version: 19.2.3(@types/react@19.2.17)
+      '@types/topojson-client':
+        specifier: 3.1.5
+        version: 3.1.5
+      '@types/topojson-specification':
+        specifier: 1.0.5
+        version: 1.0.5
       '@vitejs/plugin-react':
         specifier: ^6.0.3
         version: 6.0.3(vite@8.1.6(@types/node@25.9.2)(jiti@2.7.0))
@@ -165,6 +171,12 @@ importers:
       tailwindcss:
         specifier: ^4.3.2
         version: 4.3.2
+      topojson-server:
+        specifier: 3.0.1
+        version: 3.0.1
+      topojson-simplify:
+        specifier: 3.0.1
+        version: 3.0.1
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -1209,9 +1221,6 @@ packages:
   '@types/geojson@7946.0.16':
     resolution: {integrity: sha512-6C8nqWur3j98U6+lXDfTUWIfgvZU+EumvpHKcYjujKH7woYyLj2sUmff0tRhrqM7BohUw7Pz3ZB1jj2gW9Fvmg==}
 
-  '@types/luxon@3.7.1':
-    resolution: {integrity: sha512-H3iskjFIAn5SlJU7OuxUmTEpebK6TKB8rxZShDslBMZJ5u9S//KM1sbdAisiSrqwLQncVjnpi2OK2J51h+4lsg==}
-
   '@types/node@25.9.2':
     resolution: {integrity: sha512-G05zqtJhcDLb8uslf5EjCxXg9G1KQxiV8OS0R26IC//Eoyitzqe8z37I7cqvnZlrlSfgocQRfSn/AHBZJJFyGw==}
 
@@ -1222,6 +1231,12 @@ packages:
 
   '@types/react@19.2.17':
     resolution: {integrity: sha512-MXfmqaVPEVgkBT/aY0aGCkRWWtByiYQXo3xdQ8r5RzuFrPiRn8Gar2tQdXSUQ2GKV3bkXckek89V8wQBY2Q/Aw==}
+
+  '@types/topojson-client@3.1.5':
+    resolution: {integrity: sha512-C79rySTyPxnQNNguTZNI1Ct4D7IXgvyAs3p9HPecnl6mNrJ5+UhvGNYcZfpROYV2lMHI48kJPxwR+F9C6c7nmw==}
+
+  '@types/topojson-specification@1.0.5':
+    resolution: {integrity: sha512-C7KvcQh+C2nr6Y2Ub4YfgvWvWCgP2nOQMtfhlnwsRL4pYmmwzBS7HclGiS87eQfDOU/DLQpX6GEscviaz4yLIQ==}
 
   '@types/use-sync-external-store@0.0.6':
     resolution: {integrity: sha512-zFDAD+tlpf2r4asuHEj0XH6pY6i0g5NeAHPn+15wk3BV6JA69eERFXC1gyGThDkVa1zCyKr5jox1+2LbV/AMLg==}
@@ -1442,6 +1457,10 @@ packages:
     peerDependencies:
       react: ^18 || ^19 || ^19.0.0-rc
       react-dom: ^18 || ^19 || ^19.0.0-rc
+
+  commander@2.0.0:
+    resolution: {integrity: sha512-qebjpyeaA/nJ4w3EO2cV2++/zEkccPnjWogzA2rff+Lk8ILI75vULeTmyd4wPxWdKwtP3J+G39IXVZadh0UHyw==}
+    engines: {node: '>= 0.6.x'}
 
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
@@ -1827,10 +1846,6 @@ packages:
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  luxon@3.7.2:
-    resolution: {integrity: sha512-vtEhXh/gNjI9Yg1u4jX/0YVPMvxzHuGgCm6tC5kZyb08yjGWGnqAjGJvcXbqQR2P3MyMEFnRbpcdFS6PBcLqew==}
-    engines: {node: '>=12'}
-
   lz-string@1.5.0:
     resolution: {integrity: sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==}
     hasBin: true
@@ -2091,6 +2106,18 @@ packages:
 
   tldts@7.4.6:
     resolution: {integrity: sha512-rbP0Gyx8b3Ae9yO//CU2wbSnQNoQ66m1nJdSbSHmnwKwzkkz/u8mERYU8T2rmlmy+bJvRNn84yNCW8gYqox44Q==}
+    hasBin: true
+
+  topojson-client@3.1.0:
+    resolution: {integrity: sha512-605uxS6bcYxGXw9qi62XyrV6Q3xwbndjachmNxu8HWTtVPxZfEJN9fd/SZS1Q54Sn2y0TMyMxFj/cJINqGHrKw==}
+    hasBin: true
+
+  topojson-server@3.0.1:
+    resolution: {integrity: sha512-/VS9j/ffKr2XAOjlZ9CgyyeLmgJ9dMwq6Y0YEON8O7p/tGGk+dCWnrE03zEdu7i4L7YsFZLEPZPzCvcB7lEEXw==}
+    hasBin: true
+
+  topojson-simplify@3.0.1:
+    resolution: {integrity: sha512-Zzg37QYM1yJb7BryHyTSckb8o2S8F6ONlrXEJggdW+gXybjNVfLRLofRrAQUsEbt4xqLF+WK71GRvwZVfWzK8A==}
     hasBin: true
 
   tough-cookie@6.0.1:
@@ -3188,8 +3215,6 @@ snapshots:
 
   '@types/geojson@7946.0.16': {}
 
-  '@types/luxon@3.7.1': {}
-
   '@types/node@25.9.2':
     dependencies:
       undici-types: 7.24.6
@@ -3201,6 +3226,15 @@ snapshots:
   '@types/react@19.2.17':
     dependencies:
       csstype: 3.2.3
+
+  '@types/topojson-client@3.1.5':
+    dependencies:
+      '@types/geojson': 7946.0.16
+      '@types/topojson-specification': 1.0.5
+
+  '@types/topojson-specification@1.0.5':
+    dependencies:
+      '@types/geojson': 7946.0.16
 
   '@types/use-sync-external-store@0.0.6': {}
 
@@ -3369,6 +3403,8 @@ snapshots:
     transitivePeerDependencies:
       - '@types/react'
       - '@types/react-dom'
+
+  commander@2.0.0: {}
 
   convert-source-map@2.0.0: {}
 
@@ -3667,8 +3703,6 @@ snapshots:
     dependencies:
       react: 19.2.7
 
-  luxon@3.7.2: {}
-
   lz-string@1.5.0: {}
 
   magic-string@0.30.21:
@@ -3906,6 +3940,19 @@ snapshots:
   tldts@7.4.6:
     dependencies:
       tldts-core: 7.4.6
+
+  topojson-client@3.1.0:
+    dependencies:
+      commander: 2.0.0
+
+  topojson-server@3.0.1:
+    dependencies:
+      commander: 2.0.0
+
+  topojson-simplify@3.0.1:
+    dependencies:
+      commander: 2.0.0
+      topojson-client: 3.1.0
 
   tough-cookie@6.0.1:
     dependencies:

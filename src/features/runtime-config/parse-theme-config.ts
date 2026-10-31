@@ -235,11 +235,21 @@ function findAssignmentValue(code: string, match: RegExpExecArray): unknown {
 	return new ConfigLiteralParser(source.trim()).parse();
 }
 
+let cachedCode: string | undefined;
+let cachedConfig: Record<string, unknown> | undefined;
+let cacheValid = false;
+
 export function parseThemeConfig(
 	code: string,
 ): Record<string, unknown> | undefined {
+	if (cacheValid && code === cachedCode) return cachedConfig;
 	const match = findAssignment(code, "ArsnThemeConfig");
-	if (!match) return undefined;
+	if (!match) {
+		cachedCode = code;
+		cachedConfig = undefined;
+		cacheValid = true;
+		return undefined;
+	}
 	let value: unknown;
 	try {
 		value = findAssignmentValue(code, match);
@@ -248,9 +258,17 @@ export function parseThemeConfig(
 			"ArsnThemeConfig must be a plain object containing only static strings, numbers, booleans, arrays, and objects.",
 		);
 	}
-	if (!value || typeof value !== "object" || Array.isArray(value))
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		cachedCode = code;
+		cachedConfig = undefined;
+		cacheValid = true;
 		return undefined;
-	return value as Record<string, unknown>;
+	}
+	const result = value as Record<string, unknown>;
+	cachedCode = code;
+	cachedConfig = result;
+	cacheValid = true;
+	return result;
 }
 
 export function parseThemeConfigValue(code: string, key: string): unknown {
