@@ -10,7 +10,9 @@
 			"**",
 			"!!**/dist",
 			"!!src/theme/arsn-runtime.js",
-			"!!src/theme/arsn-theme.css"
+			"!!src/theme/arsn-theme.css",
+			"!!src/assets/countries.topo.json",
+			"!!scripts/data"
 		]
 	},
 	"formatter": {
